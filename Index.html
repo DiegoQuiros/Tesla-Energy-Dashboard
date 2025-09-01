@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tesla Energy Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 100%);
+            color: #ffffff;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Mobile-first design for iPhone 16 Pro Max */
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            background: linear-gradient(45deg, #ff6b35, #f7931e);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+            .header h1 {
+                font-size: 2.5rem;
+                font-weight: 700;
+                margin-bottom: 10px;
+            }
+
+        .last-updated {
+            color: #888;
+            font-size: 0.9rem;
+        }
+
+        .status-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        @media (max-width: 768px) {
+            .status-cards {
+                grid-template-columns: 1fr;
+                gap: 15px;
+            }
+        }
+
+        .card {
+            background: linear-gradient(145deg, #1e1e1e, #2a2a2a);
+            border-radius: 20px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+            .card h3 {
+                font-size: 1.3rem;
+                margin-bottom: 15px;
+                color: #ff6b35;
+            }
+
+        .battery-level {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .battery-bar {
+            width: 60%;
+            height: 12px;
+            background: #333;
+            border-radius: 6px;
+            overflow: hidden;
+            margin-left: 10px;
+        }
+
+        .battery-fill {
+            height: 100%;
+            border-radius: 6px;
+            transition: width 0.3s ease;
+        }
+
+        .tesla-red {
+            background: linear-gradient(90deg, #ff4444, #cc0000);
+        }
+
+        .tesla-blue {
+            background: linear-gradient(90deg, #4477ff, #0033cc);
+        }
+
+        .powerwall-green {
+            background: linear-gradient(90deg, #44ff44, #00cc00);
+        }
+
+        .weather-card {
+            background: linear-gradient(145deg, #2a3d66, #1a2744);
+        }
+
+        .weather-temp {
+            font-size: 3rem;
+            font-weight: bold;
+            color: #87ceeb;
+        }
+
+        .weather-condition {
+            font-size: 1.1rem;
+            color: #b0c4de;
+            margin-top: 10px;
+        }
+
+        .chart-container {
+            background: linear-gradient(145deg, #1e1e1e, #2a2a2a);
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+            .chart-container h3 {
+                color: #ff6b35;
+                font-size: 1.5rem;
+                margin-bottom: 20px;
+                text-align: center;
+            }
+
+        .chart-wrapper {
+            position: relative;
+            height: 400px;
+        }
+
+        @media (max-width: 768px) {
+            .chart-wrapper {
+                height: 350px;
+            }
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+
+        .error {
+            text-align: center;
+            padding: 40px;
+            color: #ff4444;
+            background: rgba(255, 68, 68, 0.1);
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+
+        .power-flow {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .power-item {
+            text-align: center;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+        }
+
+        .power-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .power-label {
+            font-size: 0.9rem;
+            color: #888;
+        }
+
+        .solar-positive {
+            color: #ffcc00;
+        }
+
+        .battery-charging {
+            color: #00cc00;
+        }
+
+        .battery-discharging {
+            color: #ff4444;
+        }
+
+        .grid-positive {
+            color: #ff6b35;
+        }
+
+        .grid-negative {
+            color: #00cc00;
+        }
+
+        /* Responsive design for ultrawide monitors */
+        @media (min-width: 1400px) {
+            .container {
+                max-width: 1600px;
+            }
+
+            .status-cards {
+                grid-template-columns: repeat(4, 1fr);
+            }
+
+            .charts-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 30px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚡ Tesla Energy Dashboard</h1>
+            <div class="last-updated" id="lastUpdated">Loading...</div>
+        </div>
+
+        <div id="loading" class="loading">
+            <h3>Loading energy data...</h3>
+        </div>
+
+        <div id="error" class="error" style="display: none;">
+            <h3>Unable to load data</h3>
+            <p id="errorMessage"></p>
+        </div>
+
+        <div id="dashboard" style="display: none;">
+            <div class="status-cards">
+                <!-- Weather Card -->
+                <div class="card weather-card">
+                    <h3>🌤️ Weather</h3>
+                    <div class="weather-temp" id="weatherTemp">--°F</div>
+                    <div class="weather-condition" id="weatherCondition">--</div>
+                    <div style="margin-top: 15px; font-size: 0.9rem; color: #b0c4de;">
+                        <div>Humidity: <span id="weatherHumidity">--%</span></div>
+                        <div>Solar Impact: <span id="weatherSolarImpact">--</span></div>
+                    </div>
+                </div>
+
+                <!-- Powerwall Card -->
+                <div class="card">
+                    <h3>🔋 Powerwall</h3>
+                    <div class="battery-level">
+                        <span id="powerwallPercent">--%</span>
+                        <div class="battery-bar">
+                            <div class="battery-fill powerwall-green" id="powerwallBar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="power-flow">
+                        <div class="power-item">
+                            <div class="power-value solar-positive" id="solarPower">-- kW</div>
+                            <div class="power-label">Solar</div>
+                        </div>
+                        <div class="power-item">
+                            <div class="power-value" id="batteryPower">-- kW</div>
+                            <div class="power-label">Battery</div>
+                        </div>
+                        <div class="power-item">
+                            <div class="power-value" id="gridPower">-- kW</div>
+                            <div class="power-label">Grid</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Model 3 Card -->
+                <div class="card">
+                    <h3>🚗 Model 3</h3>
+                    <div class="battery-level">
+                        <span id="model3Percent">--%</span>
+                        <div class="battery-bar">
+                            <div class="battery-fill tesla-red" id="model3Bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 10px; font-size: 0.9rem; color: #ccc;">
+                        <div>Status: <span id="model3Status">--</span></div>
+                        <div>Range: <span id="model3Range">-- mi</span></div>
+                        <div id="model3Charging" style="display: none;">Charging: <span id="model3ChargingRate">-- kW</span></div>
+                    </div>
+                </div>
+
+                <!-- Model X Card -->
+                <div class="card">
+                    <h3>🚙 Model X</h3>
+                    <div class="battery-level">
+                        <span id="modelXPercent">--%</span>
+                        <div class="battery-bar">
+                            <div class="battery-fill tesla-blue" id="modelXBar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 10px; font-size: 0.9rem; color: #ccc;">
+                        <div>Status: <span id="modelXStatus">--</span></div>
+                        <div>Range: <span id="modelXRange">-- mi</span></div>
+                        <div id="modelXCharging" style="display: none;">Charging: <span id="modelXChargingRate">-- kW</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="charts-grid">
+                <!-- Solar Production Chart -->
+                <div class="chart-container">
+                    <h3>☀️ Today's Solar Production</h3>
+                    <div class="chart-wrapper">
+                        <canvas id="solarChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Battery Levels Chart -->
+                <div class="chart-container">
+                    <h3>🔋 Battery Levels Today</h3>
+                    <div class="chart-wrapper">
+                        <canvas id="batteryChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration - Update this URL to your Azure Blob Storage public URL
+        const AZURE_BLOB_URL = 'https://powermanagestorage.blob.core.windows.net/energy-data/energy-data.json';
+
+        let energyData = [];
+        let solarChart = null;
+        let batteryChart = null;
+
+        // Battery capacities in kWh
+        const BATTERY_CAPACITIES = {
+            MODEL_3: 52, // kWh - Model 3 Standard Range Plus
+            MODEL_X: 100 // kWh - Model X
+        };
+
+        async function loadEnergyData() {
+            try {
+                console.log('Loading energy data from:', AZURE_BLOB_URL);
+                const response = await fetch(AZURE_BLOB_URL);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                energyData = data.sort((a, b) => new Date(a.LocalTimestamp) - new Date(b.LocalTimestamp));
+
+                console.log(`Loaded ${energyData.length} data points`);
+
+                if (energyData.length === 0) {
+                    throw new Error('No data available');
+                }
+
+                updateDashboard();
+                createCharts();
+
+            } catch (error) {
+                console.error('Error loading energy data:', error);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('errorMessage').textContent = error.message;
+            }
+        }
+
+        function updateDashboard() {
+            if (energyData.length === 0) return;
+
+            const latest = energyData[energyData.length - 1];
+            console.log('Latest data point:', latest);
+
+            // Update timestamp
+            const lastUpdated = new Date(latest.LocalTimestamp);
+            document.getElementById('lastUpdated').textContent = `Last updated: ${lastUpdated.toLocaleString()}`;
+
+            // Update weather
+            document.getElementById('weatherTemp').textContent = `${latest.WeatherTemperatureF || '--'}°F`;
+            document.getElementById('weatherCondition').textContent = latest.WeatherConditions || 'Unknown';
+            document.getElementById('weatherHumidity').textContent = `${latest.WeatherHumidity || '--'}%`;
+            document.getElementById('weatherSolarImpact').textContent = latest.WeatherSolarImpact ? `${(latest.WeatherSolarImpact * 100).toFixed(0)}%` : '--';
+
+            // Update Powerwall
+            const batteryPercent = latest.BatteryPercentage || 0;
+            document.getElementById('powerwallPercent').textContent = `${batteryPercent.toFixed(1)}%`;
+            document.getElementById('powerwallBar').style.width = `${batteryPercent}%`;
+
+            // Update power flow
+            document.getElementById('solarPower').textContent = `${(latest.SolarPowerKw || 0).toFixed(1)} kW`;
+
+            const batteryPower = latest.BatteryPowerKw || 0;
+            const batteryElement = document.getElementById('batteryPower');
+            batteryElement.textContent = `${Math.abs(batteryPower).toFixed(1)} kW`;
+            batteryElement.className = `power-value ${batteryPower < 0 ? 'battery-charging' : batteryPower > 0 ? 'battery-discharging' : ''}`;
+
+            const gridPower = latest.GridPowerKw || 0;
+            const gridElement = document.getElementById('gridPower');
+            gridElement.textContent = `${Math.abs(gridPower).toFixed(1)} kW`;
+            gridElement.className = `power-value ${gridPower > 0 ? 'grid-positive' : gridPower < 0 ? 'grid-negative' : ''}`;
+
+            // Update Model 3
+            if (latest.Model3IsAvailable) {
+                const model3Percent = latest.Model3Battery || 0;
+                document.getElementById('model3Percent').textContent = `${model3Percent}%`;
+                document.getElementById('model3Bar').style.width = `${model3Percent}%`;
+                document.getElementById('model3Status').textContent = latest.Model3ChargingState || 'Unknown';
+                document.getElementById('model3Range').textContent = `${Math.round(latest.Model3EstimatedRangeMiles || 0)} mi`;
+
+                if (latest.Model3IsCharging) {
+                    document.getElementById('model3Charging').style.display = 'block';
+                    document.getElementById('model3ChargingRate').textContent = `${latest.Model3ChargerPowerKw || 0} kW`;
+                } else {
+                    document.getElementById('model3Charging').style.display = 'none';
+                }
+            } else {
+                document.getElementById('model3Status').textContent = 'Offline';
+            }
+
+            // Update Model X
+            if (latest.ModelXIsAvailable) {
+                const modelXPercent = latest.ModelXBattery || 0;
+                document.getElementById('modelXPercent').textContent = `${modelXPercent}%`;
+                document.getElementById('modelXBar').style.width = `${modelXPercent}%`;
+                document.getElementById('modelXStatus').textContent = latest.ModelXChargingState || 'Unknown';
+                document.getElementById('modelXRange').textContent = `${Math.round(latest.ModelXEstimatedRangeMiles || 0)} mi`;
+
+                if (latest.ModelXIsCharging) {
+                    document.getElementById('modelXCharging').style.display = 'block';
+                    document.getElementById('modelXChargingRate').textContent = `${latest.ModelXChargerPowerKw || 0} kW`;
+                } else {
+                    document.getElementById('modelXCharging').style.display = 'none';
+                }
+            } else {
+                document.getElementById('modelXStatus').textContent = 'Offline';
+            }
+
+            // Show dashboard
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('dashboard').style.display = 'block';
+        }
+
+        function getTodayData() {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            return energyData.filter(point => {
+                const pointDate = new Date(point.LocalTimestamp);
+                return pointDate >= today;
+            });
+        }
+
+        function createCharts() {
+            const todayData = getTodayData();
+            console.log(`Creating charts with ${todayData.length} today's data points`);
+
+            createSolarChart(todayData);
+            createBatteryChart(todayData);
+        }
+
+        function createSolarChart(todayData) {
+            const ctx = document.getElementById('solarChart').getContext('2d');
+
+            // Destroy existing chart
+            if (solarChart) {
+                solarChart.destroy();
+            }
+
+            const timeLabels = todayData.map(point => {
+                const date = new Date(point.LocalTimestamp);
+                return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            });
+
+            const solarData = todayData.map(point => Math.max(0, point.SolarPowerKw || 0));
+
+            solarChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: timeLabels,
+                    datasets: [{
+                        label: 'Solar Production (kW)',
+                        data: solarData,
+                        borderColor: '#ffcc00',
+                        backgroundColor: 'rgba(255, 204, 0, 0.2)',
+                        fill: true,
+                        tension: 0.4,
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: '#ffffff'
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                color: '#888',
+                                maxTicksLimit: 12
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                color: '#888',
+                                callback: function(value) {
+                                    return value + ' kW';
+                                }
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function createBatteryChart(todayData) {
+            const ctx = document.getElementById('batteryChart').getContext('2d');
+
+            // Destroy existing chart
+            if (batteryChart) {
+                batteryChart.destroy();
+            }
+
+            const timeLabels = todayData.map(point => {
+                const date = new Date(point.LocalTimestamp);
+                return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            });
+
+            const powerwallData = todayData.map(point => point.BatteryPercentage || 0);
+            const model3Data = todayData.map(point => point.Model3IsAvailable ? (point.Model3Battery || 0) : null);
+            const modelXData = todayData.map(point => point.ModelXIsAvailable ? (point.ModelXBattery || 0) : null);
+
+            // Generate predictions for the rest of the day
+            const predictions = generateBatteryPredictions(todayData);
+
+            const datasets = [
+                {
+                    label: 'Powerwall',
+                    data: powerwallData.concat(predictions.powerwall),
+                    borderColor: '#00cc00',
+                    backgroundColor: 'rgba(0, 204, 0, 0.1)',
+                    tension: 0.4,
+                    borderWidth: 2,
+                    spanGaps: true
+                },
+                {
+                    label: 'Model 3',
+                    data: model3Data.concat(predictions.model3),
+                    borderColor: '#ff4444',
+                    backgroundColor: 'rgba(255, 68, 68, 0.1)',
+                    tension: 0.4,
+                    borderWidth: 2,
+                    spanGaps: true
+                },
+                {
+                    label: 'Model X',
+                    data: modelXData.concat(predictions.modelX),
+                    borderColor: '#4477ff',
+                    backgroundColor: 'rgba(68, 119, 255, 0.1)',
+                    tension: 0.4,
+                    borderWidth: 2,
+                    spanGaps: true
+                }
+            ];
+
+            batteryChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: timeLabels.concat(predictions.labels),
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: '#ffffff'
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                color: '#888',
+                                maxTicksLimit: 12
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            }
+                        },
+                        y: {
+                            min: 0,
+                            max: 100,
+                            ticks: {
+                                color: '#888',
+                                callback: function(value) {
+                                    return value + '%';
+                                }
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function generateBatteryPredictions(todayData) {
+            if (todayData.length === 0) {
+                return { labels: [], powerwall: [], model3: [], modelX: [] };
+            }
+
+            const latest = todayData[todayData.length - 1];
+            const now = new Date(latest.LocalTimestamp);
+            const endOfDay = new Date(now);
+            endOfDay.setHours(23, 59, 59);
+
+            const predictions = {
+                labels: [],
+                powerwall: [],
+                model3: [],
+                modelX: []
+            };
+
+            // Generate hourly predictions until end of day
+            let currentTime = new Date(now);
+            currentTime.setMinutes(0, 0, 0); // Round to next hour
+            currentTime.setHours(currentTime.getHours() + 1);
+
+            let currentPowerwallLevel = latest.BatteryPercentage || 0;
+            let currentModel3Level = latest.Model3Battery || 0;
+            let currentModelXLevel = latest.ModelXBattery || 0;
+
+            while (currentTime <= endOfDay) {
+                predictions.labels.push(currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
+
+                // Simple prediction logic - you can make this more sophisticated
+                if (latest.Model3IsCharging && latest.Model3ChargerPowerKw > 0) {
+                    // Calculate charging rate per hour
+                    const chargingRateKw = latest.Model3ChargerPowerKw;
+                    const percentagePerHour = (chargingRateKw / BATTERY_CAPACITIES.MODEL_3) * 100;
+                    currentModel3Level = Math.min(100, currentModel3Level + percentagePerHour);
+                }
+
+                if (latest.ModelXIsCharging && latest.ModelXChargerPowerKw > 0) {
+                    const chargingRateKw = latest.ModelXChargerPowerKw;
+                    const percentagePerHour = (chargingRateKw / BATTERY_CAPACITIES.MODEL_X) * 100;
+                    currentModelXLevel = Math.min(100, currentModelXLevel + percentagePerHour);
+                }
+
+                // Powerwall prediction based on solar/load patterns
+                const hour = currentTime.getHours();
+                if (hour >= 6 && hour <= 18 && latest.SolarPowerKw > 0) {
+                    // Daytime - might charge from solar
+                    currentPowerwallLevel = Math.min(100, currentPowerwallLevel + 2);
+                } else {
+                    // Nighttime - might discharge
+                    currentPowerwallLevel = Math.max(0, currentPowerwallLevel - 1);
+                }
+
+                predictions.powerwall.push(currentPowerwallLevel);
+                predictions.model3.push(latest.Model3IsAvailable ? currentModel3Level : null);
+                predictions.modelX.push(latest.ModelXIsAvailable ? currentModelXLevel : null);
+
+                currentTime.setHours(currentTime.getHours() + 1);
+            }
+
+            return predictions;
+        }
+
+        // Auto-refresh every 5 minutes
+        function startAutoRefresh() {
+            setInterval(() => {
+                console.log('Auto-refreshing data...');
+                loadEnergyData();
+            }, 5 * 60 * 1000); // 5 minutes
+        }
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            loadEnergyData();
+            startAutoRefresh();
+        });
+    </script>
+</body>
+</html>
