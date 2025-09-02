@@ -24,6 +24,34 @@
         </div>
 
         <div id="dashboard" style="display: none;">
+            <!-- Energy Flow Section -->
+            <div class="energy-flow-section">
+                <h2>⚡ Energy Flow</h2>
+                <div class="energy-charts-container">
+                    <div class="energy-chart-card">
+                        <h3>🔋 Energy Creation</h3>
+                        <div class="doughnut-chart-wrapper">
+                            <canvas id="energyCreationChart"></canvas>
+                            <div class="chart-center-text">
+                                <div class="center-value" id="totalCreation">-- kW</div>
+                                <div class="center-label">Total</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="energy-chart-card">
+                        <h3>⚡ Energy Usage</h3>
+                        <div class="doughnut-chart-wrapper">
+                            <canvas id="energyUsageChart"></canvas>
+                            <div class="chart-center-text">
+                                <div class="center-value" id="totalUsage">-- kW</div>
+                                <div class="center-label">Total</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="status-cards">
                 <!-- Weather Card -->
                 <div class="card weather-card">
@@ -132,6 +160,14 @@
             </div>
 
             <div class="charts-grid">
+                <!-- Temperature Comparison Chart -->
+                <div class="chart-container">
+                    <h3>🌡️ Temperature Comparison</h3>
+                    <div class="chart-wrapper">
+                        <canvas id="temperatureChart"></canvas>
+                    </div>
+                </div>
+
                 <!-- Solar Production Chart -->
                 <div class="chart-container">
                     <h3>☀️ Today's Solar Production</h3>

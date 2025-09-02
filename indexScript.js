@@ -4,6 +4,9 @@ const AZURE_BLOB_URL = 'https://powermanagestorage.blob.core.windows.net/energy-
 let energyData = [];
 let solarChart = null;
 let batteryChart = null;
+let temperatureChart = null;
+let energyCreationChart = null;
+let energyUsageChart = null;
 
 // Battery capacities in kWh
 const BATTERY_CAPACITIES = {
@@ -80,7 +83,6 @@ async function loadEnergyData() {
 
         updateDashboard();
 
-        // Wait for Chart.js to be loaded before creating charts
         if (typeof Chart !== 'undefined') {
             createCharts();
         } else {
@@ -110,6 +112,9 @@ function updateDashboard() {
 
     // Update timestamp
     document.getElementById('lastUpdated').textContent = `Last updated: ${lastUpdated.toLocaleString()}`;
+
+    // Update energy flow display
+    updateEnergyFlowCharts(latest);
 
     // Update weather
     document.getElementById('weatherTemp').textContent = `${latest.WeatherTemperatureF || '--'}°F`;
@@ -154,6 +159,83 @@ function updateDashboard() {
     // Show dashboard
     document.getElementById('loading').style.display = 'none';
     document.getElementById('dashboard').style.display = 'block';
+}
+
+function updateEnergyFlow(latest) {
+    const solarPower = latest.SolarPowerKw || 0;
+    const batteryPower = latest.BatteryPowerKw || 0; // Negative = charging, Positive = discharging
+    const gridPower = latest.GridPowerKw || 0; // Negative = exporting, Positive = importing
+    const loadPower = latest.LoadPowerKw || 0;
+
+    // Calculate approximate energy distribution
+    const model3ChargingPower = (latest.Model3IsCharging && latest.Model3ChargerPowerKw) ? latest.Model3ChargerPowerKw : 0;
+    const modelXChargingPower = (latest.ModelXIsCharging && latest.ModelXChargerPowerKw) ? latest.ModelXChargerPowerKw : 0;
+    const totalVehicleCharging = model3ChargingPower + modelXChargingPower;
+
+    // Calculate thermostat power consumption - only if status is not OFF
+    let thermostatPower = 0;
+    if (latest.ThermostatIsOnline && latest.ThermostatStatus && latest.ThermostatStatus !== 'OFF') {
+        if (latest.ThermostatIsActivelyRunning) {
+            thermostatPower = 5.6;
+        } else {
+            thermostatPower = 1.2; // Air Wave fan running
+        }
+    }
+
+    // Update solar generation
+    document.getElementById('solarGeneration').textContent = `${solarPower.toFixed(1)} kW`;
+
+    // Update thermostat energy
+    const thermostatElement = document.getElementById('thermostatEnergy');
+    const thermostatStatusElement = document.getElementById('thermostatEnergyStatus');
+    thermostatElement.textContent = `${thermostatPower.toFixed(1)} kW`;
+    thermostatElement.className = thermostatPower > 0 ? 'energy-value small energy-charging' : 'energy-value small energy-inactive';
+    thermostatStatusElement.textContent = latest.ThermostatStatus === 'OFF' ? 'Off' :
+        (latest.ThermostatIsActivelyRunning ? latest.ThermostatStatus : 'Fan');
+
+    // Update Powerwall energy
+    const powerwallElement = document.getElementById('powerwallEnergy');
+    const powerwallStatusElement = document.getElementById('powerwallEnergyStatus');
+    powerwallElement.textContent = `${Math.abs(batteryPower).toFixed(1)} kW`;
+    if (batteryPower < -0.1) {
+        powerwallElement.className = 'energy-value small energy-charging';
+        powerwallStatusElement.textContent = 'Charging';
+    } else if (batteryPower > 0.1) {
+        powerwallElement.className = 'energy-value small energy-discharging';
+        powerwallStatusElement.textContent = 'Discharging';
+    } else {
+        powerwallElement.className = 'energy-value small energy-inactive';
+        powerwallStatusElement.textContent = 'Idle';
+    }
+
+    // Update Model 3 energy
+    const model3Element = document.getElementById('model3Energy');
+    const model3StatusElement = document.getElementById('model3EnergyStatus');
+    model3Element.textContent = `${model3ChargingPower.toFixed(1)} kW`;
+    model3Element.className = model3ChargingPower > 0 ? 'energy-value small energy-charging' : 'energy-value small energy-inactive';
+    model3StatusElement.textContent = latest.Model3IsCharging ? 'Charging' : (latest.Model3IsAvailable ? 'Ready' : 'Offline');
+
+    // Update Model X energy
+    const modelXElement = document.getElementById('modelxEnergy');
+    const modelXStatusElement = document.getElementById('modelxEnergyStatus');
+    modelXElement.textContent = `${modelXChargingPower.toFixed(1)} kW`;
+    modelXElement.className = modelXChargingPower > 0 ? 'energy-value small energy-charging' : 'energy-value small energy-inactive';
+    modelXStatusElement.textContent = latest.ModelXIsCharging ? 'Charging' : (latest.ModelXIsAvailable ? 'Ready' : 'Offline');
+
+    // Update Grid energy
+    const gridElement = document.getElementById('gridEnergy');
+    const gridStatusElement = document.getElementById('gridEnergyStatus');
+    gridElement.textContent = `${Math.abs(gridPower).toFixed(1)} kW`;
+    if (gridPower > 0.1) {
+        gridElement.className = 'energy-value small energy-grid-import';
+        gridStatusElement.textContent = 'Importing';
+    } else if (gridPower < -0.1) {
+        gridElement.className = 'energy-value small energy-grid-export';
+        gridStatusElement.textContent = 'Exporting';
+    } else {
+        gridElement.className = 'energy-value small energy-inactive';
+        gridStatusElement.textContent = 'Balanced';
+    }
 }
 
 function updateThermostatCard(latest, currentTime) {
@@ -288,8 +370,368 @@ function createCharts() {
         return;
     }
 
+    createTemperatureChart(todayData);
     createSolarChart(todayData);
     createBatteryChart(todayData);
+}
+
+function updateEnergyFlowCharts(latest) {
+    const solarPower = latest.SolarPowerKw || 0;
+    const batteryPower = latest.BatteryPowerKw || 0; // Negative = charging, Positive = discharging
+    const gridPower = latest.GridPowerKw || 0; // Negative = exporting, Positive = importing
+
+    // Energy Creation Sources
+    const energyCreation = [];
+    const creationLabels = [];
+    const creationColors = [];
+
+    if (solarPower > 0) {
+        energyCreation.push(solarPower);
+        creationLabels.push('Solar Panels');
+        creationColors.push('#ffcc00');
+    }
+
+    if (batteryPower > 0) {
+        energyCreation.push(batteryPower);
+        creationLabels.push('Powerwall Discharge');
+        creationColors.push('#ff4444');
+    }
+
+    if (gridPower > 0) {
+        energyCreation.push(gridPower);
+        creationLabels.push('Grid Import');
+        creationColors.push('#ff6b35');
+    }
+
+    // Calculate total energy creation
+    const totalCreation = solarPower + (batteryPower > 0 ? batteryPower : 0) + (gridPower > 0 ? gridPower : 0);
+
+    // Energy Usage Destinations
+    const energyUsage = [];
+    const usageLabels = [];
+    const usageColors = [];
+
+    // Powerwall charging (negative battery power)
+    if (batteryPower < 0) {
+        energyUsage.push(Math.abs(batteryPower));
+        usageLabels.push('Powerwall Charging');
+        usageColors.push('#00cc00');
+    }
+
+    // Grid export (negative grid power)
+    if (gridPower < 0) {
+        energyUsage.push(Math.abs(gridPower));
+        usageLabels.push('Grid Export');
+        usageColors.push('#00ff88');
+    }
+
+    // Thermostat power consumption - only if thermostat status is not OFF
+    let thermostatPower = 0;
+    if (latest.ThermostatIsOnline && latest.ThermostatStatus && latest.ThermostatStatus !== 'OFF') {
+        // Check if actively running (full 5.6kW) or just fan running (~1.2kW for Air Wave)
+        if (latest.ThermostatIsActivelyRunning) {
+            thermostatPower = 5.6;
+        } else {
+            // Thermostat is ON but not actively heating/cooling - could be fan running (Air Wave)
+            thermostatPower = 1.2;
+        }
+    }
+
+    if (thermostatPower > 0) {
+        energyUsage.push(thermostatPower);
+        usageLabels.push('Thermostat');
+        usageColors.push('#4a9eff');
+    }
+
+    // Model 3 charging
+    const model3ChargingPower = (latest.Model3IsCharging && latest.Model3ChargerPowerKw) ? latest.Model3ChargerPowerKw : 0;
+    if (model3ChargingPower > 0) {
+        energyUsage.push(model3ChargingPower);
+        usageLabels.push('Model 3 Charging');
+        usageColors.push('#ff6666');
+    }
+
+    // Model X charging
+    const modelXChargingPower = (latest.ModelXIsCharging && latest.ModelXChargerPowerKw) ? latest.ModelXChargerPowerKw : 0;
+    if (modelXChargingPower > 0) {
+        energyUsage.push(modelXChargingPower);
+        usageLabels.push('Model X Charging');
+        usageColors.push('#6677ff');
+    }
+
+    // Calculate house power as remainder to ensure total creation = total usage
+    const categorizedUsage = Math.abs(batteryPower < 0 ? batteryPower : 0) +
+        (gridPower < 0 ? Math.abs(gridPower) : 0) +
+        thermostatPower +
+        model3ChargingPower +
+        modelXChargingPower;
+
+    const housePower = Math.max(0, totalCreation - categorizedUsage);
+    if (housePower > 0.1) {
+        energyUsage.push(housePower);
+        usageLabels.push('House');
+        usageColors.push('#9f7aea');
+    }
+
+    // Calculate totals (should be equal now)
+    const totalCreationSum = energyCreation.reduce((sum, val) => sum + val, 0);
+    const totalUsageSum = energyUsage.reduce((sum, val) => sum + val, 0);
+
+    document.getElementById('totalCreation').textContent = `${totalCreationSum.toFixed(1)} kW`;
+    document.getElementById('totalUsage').textContent = `${totalUsageSum.toFixed(1)} kW`;
+
+    // Create or update charts
+    createEnergyCreationChart(energyCreation, creationLabels, creationColors);
+    createEnergyUsageChart(energyUsage, usageLabels, usageColors);
+}
+
+function createEnergyCreationChart(data, labels, colors) {
+    const ctx = document.getElementById('energyCreationChart').getContext('2d');
+
+    // Destroy existing chart
+    if (energyCreationChart) {
+        energyCreationChart.destroy();
+    }
+
+    if (data.length === 0) {
+        // Show empty state
+        data = [1];
+        labels = ['No Energy Creation'];
+        colors = ['#333'];
+    }
+
+    energyCreationChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: data,
+                backgroundColor: colors,
+                borderWidth: 2,
+                borderColor: '#1e1e1e',
+                cutout: '70%'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        color: '#ffffff',
+                        padding: 15,
+                        usePointStyle: true,
+                        pointStyle: 'circle',
+                        font: {
+                            size: 12
+                        }
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function (context) {
+                            const label = context.label || '';
+                            const value = context.parsed;
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = ((value / total) * 100).toFixed(1);
+                            return `${label}: ${value.toFixed(1)} kW (${percentage}%)`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function createEnergyUsageChart(data, labels, colors) {
+    const ctx = document.getElementById('energyUsageChart').getContext('2d');
+
+    // Destroy existing chart
+    if (energyUsageChart) {
+        energyUsageChart.destroy();
+    }
+
+    if (data.length === 0) {
+        // Show empty state
+        data = [1];
+        labels = ['No Energy Usage'];
+        colors = ['#333'];
+    }
+
+    energyUsageChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: data,
+                backgroundColor: colors,
+                borderWidth: 2,
+                borderColor: '#1e1e1e',
+                cutout: '70%'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        color: '#ffffff',
+                        padding: 15,
+                        usePointStyle: true,
+                        pointStyle: 'circle',
+                        font: {
+                            size: 12
+                        }
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function (context) {
+                            const label = context.label || '';
+                            const value = context.parsed;
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = ((value / total) * 100).toFixed(1);
+                            return `${label}: ${value.toFixed(1)} kW (${percentage}%)`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function createTemperatureChart(todayData) {
+    const ctx = document.getElementById('temperatureChart').getContext('2d');
+
+    // Destroy existing chart
+    if (temperatureChart) {
+        temperatureChart.destroy();
+    }
+
+    // Create labels for all 24 hours
+    const allHours = [];
+    for (let i = 0; i < 24; i++) {
+        const hour = i === 0 ? '12 AM' : i < 12 ? `${i} AM` : i === 12 ? '12 PM' : `${i - 12} PM`;
+        allHours.push(hour);
+    }
+
+    // Initialize arrays for all 24 hours with null values
+    const indoorTemps = new Array(24).fill(null);
+    const outdoorTemps = new Array(24).fill(null);
+    const outdoorForecast = new Array(24).fill(null);
+
+    // Fill in actual data
+    todayData.forEach(point => {
+        const date = convertToPDT(point.LocalTimestamp);
+        const hour = date.getHours();
+
+        if (point.ThermostatCurrentTempF && point.ThermostatCurrentTempF > 0) {
+            indoorTemps[hour] = point.ThermostatCurrentTempF;
+        }
+
+        if (point.WeatherTemperatureF && point.WeatherTemperatureF > -50) {
+            outdoorTemps[hour] = point.WeatherTemperatureF;
+        }
+    });
+
+    // Generate simple forecast for remaining hours
+    const now = new Date();
+    const currentHour = now.getHours();
+    const lastOutdoorTemp = todayData.length > 0 ? (todayData[todayData.length - 1].WeatherTemperatureF || 70) : 70;
+
+    for (let i = currentHour + 1; i < 24; i++) {
+        // Simple forecast: cooler at night, warmer during day
+        let tempAdjustment = 0;
+        if (i >= 6 && i <= 18) {
+            // Daytime: slightly warmer
+            tempAdjustment = Math.sin((i - 6) / 12 * Math.PI) * 8;
+        } else {
+            // Nighttime: cooler
+            tempAdjustment = -5;
+        }
+        outdoorForecast[i] = Math.round(lastOutdoorTemp + tempAdjustment);
+    }
+
+    const datasets = [
+        {
+            label: 'Indoor Temperature',
+            data: indoorTemps,
+            borderColor: '#4a9eff',
+            backgroundColor: 'rgba(74, 158, 255, 0.1)',
+            tension: 0.4,
+            borderWidth: 3,
+            pointRadius: 4,
+            pointBackgroundColor: '#4a9eff',
+            spanGaps: true
+        },
+        {
+            label: 'Outdoor Temperature',
+            data: outdoorTemps,
+            borderColor: '#ffcc00',
+            backgroundColor: 'rgba(255, 204, 0, 0.1)',
+            tension: 0.4,
+            borderWidth: 3,
+            pointRadius: 4,
+            pointBackgroundColor: '#ffcc00',
+            spanGaps: true
+        },
+        {
+            label: 'Outdoor Forecast',
+            data: outdoorForecast,
+            borderColor: 'transparent',
+            backgroundColor: 'rgba(255, 204, 0, 0.3)',
+            pointRadius: 4,
+            pointBackgroundColor: 'rgba(255, 204, 0, 0.6)',
+            pointBorderColor: '#ffcc00',
+            pointBorderWidth: 2,
+            showLine: false,
+            spanGaps: false
+        }
+    ];
+
+    temperatureChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: allHours,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    labels: {
+                        color: '#ffffff'
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: {
+                        color: '#888',
+                        maxTicksLimit: 12
+                    },
+                    grid: {
+                        color: 'rgba(255, 255, 255, 0.1)'
+                    }
+                },
+                y: {
+                    ticks: {
+                        color: '#888',
+                        callback: function (value) {
+                            return value + '°F';
+                        }
+                    },
+                    grid: {
+                        color: 'rgba(255, 255, 255, 0.1)'
+                    }
+                }
+            }
+        }
+    });
 }
 
 function createSolarChart(todayData) {
@@ -519,47 +961,92 @@ function generateBatteryPredictions(todayData) {
         modelX: []
     };
 
-    // Generate hourly predictions until end of day
+    // Generate 15-minute interval predictions until end of day
     let currentTime = new Date(now);
-    currentTime.setMinutes(0, 0, 0); // Round to next hour
-    currentTime.setHours(currentTime.getHours() + 1);
+    currentTime.setMinutes(Math.ceil(currentTime.getMinutes() / 15) * 15, 0, 0); // Round to next 15-minute mark
 
-    let currentPowerwallLevel = latest.BatteryPercentage || 0;
+    // Convert current battery percentage to kWh for Powerwall
+    let currentPowerwallKwh = ((latest.BatteryPercentage || 0) / 100) * BATTERY_CAPACITIES.POWERWALL;
     let currentModel3Level = latest.Model3Battery || 0;
     let currentModelXLevel = latest.ModelXBattery || 0;
+
+    // Calculate total power consumption rate including thermostat
+    let totalConsumptionKw = 0;
+
+    // Add thermostat consumption only if status is not OFF
+    if (latest.ThermostatIsOnline && latest.ThermostatStatus && latest.ThermostatStatus !== 'OFF') {
+        if (latest.ThermostatIsActivelyRunning) {
+            totalConsumptionKw += 5.6; // Full AC/heating power
+        } else {
+            totalConsumptionKw += 1.2; // Just fan running (Air Wave)
+        }
+    }
+
+    // Add vehicle charging if active
+    if (latest.Model3IsCharging && latest.Model3ChargerPowerKw) {
+        totalConsumptionKw += latest.Model3ChargerPowerKw;
+    }
+    if (latest.ModelXIsCharging && latest.ModelXChargerPowerKw) {
+        totalConsumptionKw += latest.ModelXChargerPowerKw;
+    }
+
+    // Add base house consumption (estimated from load power minus known consumers)
+    const loadPower = latest.LoadPowerKw || 0;
+    const knownConsumption = (latest.ThermostatIsOn && latest.ThermostatIsOnline ?
+        (latest.ThermostatIsActivelyRunning ? 5.6 : 1.2) : 0) +
+        (latest.Model3IsCharging ? (latest.Model3ChargerPowerKw || 0) : 0) +
+        (latest.ModelXIsCharging ? (latest.ModelXChargerPowerKw || 0) : 0);
+    const houseBaseConsumption = Math.max(0, loadPower - knownConsumption);
+    totalConsumptionKw += houseBaseConsumption;
+
+    // Get current solar and grid input
+    const solarPowerKw = latest.SolarPowerKw || 0;
+    const gridImportKw = Math.max(0, latest.GridPowerKw || 0);
+    const totalEnergyInputKw = solarPowerKw + gridImportKw;
+
+    // Net drain on Powerwall = total consumption - total energy input
+    // If positive, Powerwall discharges; if negative, Powerwall charges
+    const netPowerwallDrainKw = totalConsumptionKw - totalEnergyInputKw;
+
+    console.log(`Powerwall prediction: Current=${currentPowerwallKwh.toFixed(1)}kWh, Net drain=${netPowerwallDrainKw.toFixed(1)}kW, Total consumption=${totalConsumptionKw.toFixed(1)}kW`);
 
     while (currentTime <= endOfDay) {
         predictions.labels.push(currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
 
-        // Simple prediction logic - you can make this more sophisticated
+        // Powerwall prediction based on net energy drain
+        if (netPowerwallDrainKw > 0) {
+            // Powerwall is discharging to meet demand
+            const energyConsumedIn15Min = netPowerwallDrainKw * 0.25; // kW * 0.25 hours = kWh
+            currentPowerwallKwh = Math.max(0, currentPowerwallKwh - energyConsumedIn15Min);
+        } else if (netPowerwallDrainKw < 0) {
+            // Excess energy is charging the Powerwall
+            const energyGainedIn15Min = Math.abs(netPowerwallDrainKw) * 0.25;
+            currentPowerwallKwh = Math.min(BATTERY_CAPACITIES.POWERWALL, currentPowerwallKwh + energyGainedIn15Min);
+        }
+        // If netPowerwallDrainKw is 0, no change to Powerwall
+
+        // Convert kWh back to percentage
+        const powerwallPercentage = (currentPowerwallKwh / BATTERY_CAPACITIES.POWERWALL) * 100;
+
+        // Vehicle charging predictions (unchanged)
         if (latest.Model3IsCharging && latest.Model3ChargerPowerKw > 0) {
-            // Calculate charging rate per hour
+            // Calculate charging rate per 15 minutes
             const chargingRateKw = latest.Model3ChargerPowerKw;
-            const percentagePerHour = (chargingRateKw / BATTERY_CAPACITIES.MODEL_3) * 100;
-            currentModel3Level = Math.min(100, currentModel3Level + percentagePerHour);
+            const percentageGainIn15Min = (chargingRateKw * 0.25 / BATTERY_CAPACITIES.MODEL_3) * 100;
+            currentModel3Level = Math.min(100, currentModel3Level + percentageGainIn15Min);
         }
 
         if (latest.ModelXIsCharging && latest.ModelXChargerPowerKw > 0) {
             const chargingRateKw = latest.ModelXChargerPowerKw;
-            const percentagePerHour = (chargingRateKw / BATTERY_CAPACITIES.MODEL_X) * 100;
-            currentModelXLevel = Math.min(100, currentModelXLevel + percentagePerHour);
+            const percentageGainIn15Min = (chargingRateKw * 0.25 / BATTERY_CAPACITIES.MODEL_X) * 100;
+            currentModelXLevel = Math.min(100, currentModelXLevel + percentageGainIn15Min);
         }
 
-        // Powerwall prediction based on solar/load patterns
-        const hour = currentTime.getHours();
-        if (hour >= 6 && hour <= 18 && latest.SolarPowerKw > 0) {
-            // Daytime - might charge from solar
-            currentPowerwallLevel = Math.min(100, currentPowerwallLevel + 2);
-        } else {
-            // Nighttime - might discharge
-            currentPowerwallLevel = Math.max(0, currentPowerwallLevel - 1);
-        }
-
-        predictions.powerwall.push(currentPowerwallLevel);
+        predictions.powerwall.push(powerwallPercentage);
         predictions.model3.push(latest.Model3IsAvailable ? currentModel3Level : null);
         predictions.modelX.push(latest.ModelXIsAvailable ? currentModelXLevel : null);
 
-        currentTime.setHours(currentTime.getHours() + 1);
+        currentTime.setMinutes(currentTime.getMinutes() + 15);
     }
 
     return predictions;
