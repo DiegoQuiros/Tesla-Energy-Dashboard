@@ -161,24 +161,33 @@
 
             <div class="charts-grid">
                 <!-- Temperature Comparison Chart -->
-                <div class="chart-container">
-                    <h3>🌡️ Temperature Comparison</h3>
+                <div class="chart-container" id="temperatureChartContainer">
+                    <h3>
+                        🌡️ Temperature Comparison
+                        <button class="maximize-btn" id="temperatureMaximizeBtn">Maximize</button>
+                    </h3>
                     <div class="chart-wrapper">
                         <canvas id="temperatureChart"></canvas>
                     </div>
                 </div>
 
                 <!-- Solar Production Chart -->
-                <div class="chart-container">
-                    <h3>☀️ Today's Solar Production</h3>
+                <div class="chart-container" id="solarChartContainer">
+                    <h3>
+                        ☀️ Today's Solar Production
+                        <button class="maximize-btn" id="solarMaximizeBtn">Maximize</button>
+                    </h3>
                     <div class="chart-wrapper">
                         <canvas id="solarChart"></canvas>
                     </div>
                 </div>
 
                 <!-- Battery Levels Chart -->
-                <div class="chart-container">
-                    <h3>🔋 Battery Levels Today</h3>
+                <div class="chart-container" id="batteryChartContainer">
+                    <h3>
+                        🔋 Battery Levels Today
+                        <button class="maximize-btn" id="batteryMaximizeBtn">Maximize</button>
+                    </h3>
                     <div class="chart-wrapper">
                         <canvas id="batteryChart"></canvas>
                     </div>
@@ -187,6 +196,13 @@
         </div>
     </div>
 
-    <script src="indexScript.js"></script>
+    <script src="config.js"></script>
+    <script src="utils.js"></script>
+    <script src="dashboard-updater.js"></script>
+    <script src="chart-creator.js"></script>
+    <script src="energy-flow-charts.js"></script>
+    <script src="prediction-generator.js"></script>
+    <script src="chart-maximizer.js"></script>
+    <script src="main.js"></script>
 </body>
 </html>
