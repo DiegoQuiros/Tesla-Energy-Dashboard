@@ -28,6 +28,8 @@ async function loadEnergyData() {
         // Store the timestamp of the latest data
         lastDataTimestamp = convertToPDT(energyData[energyData.length - 1].LocalTimestamp);
 
+        scheduleSmartRefresh();
+
         updateDashboard();
 
         if (typeof Chart !== 'undefined') {

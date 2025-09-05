@@ -25,8 +25,27 @@ function createTemperatureChart(todayData) {
         temperatureChart.destroy();
     }
 
+    // Get yesterday's data
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(0, 0, 0, 0);
+    const endOfYesterday = new Date(yesterday);
+    endOfYesterday.setHours(23, 59, 59, 999);
+
+    const yesterdayData = energyData.filter(point => {
+        const pointDate = convertToPDT(point.LocalTimestamp);
+        return pointDate >= yesterday && pointDate <= endOfYesterday;
+    });
+
     // Filter data to every 15 minutes
     const filteredData = todayData.filter((point, index) => {
+        if (index === 0) return true; // Always include first point
+
+        const date = convertToPDT(point.LocalTimestamp);
+        return date.getMinutes() % 15 === 0; // Include points at :00, :15, :30, :45
+    });
+
+    const filteredYesterdayData = yesterdayData.filter((point, index) => {
         if (index === 0) return true; // Always include first point
 
         const date = convertToPDT(point.LocalTimestamp);
@@ -46,37 +65,71 @@ function createTemperatureChart(todayData) {
         (point.WeatherTemperatureF && point.WeatherTemperatureF > -50) ? point.WeatherTemperatureF : null
     );
 
+    // Yesterday's temperature data
+    const indoorTempsYesterday = filteredYesterdayData.map(point =>
+        (point.ThermostatCurrentTempF && point.ThermostatCurrentTempF > 0) ? point.ThermostatCurrentTempF : null
+    );
+
+    const outdoorTempsYesterday = filteredYesterdayData.map(point =>
+        (point.WeatherTemperatureF && point.WeatherTemperatureF > -50) ? point.WeatherTemperatureF : null
+    );
+
     // Generate simple forecast for remaining hours (only for outdoor temperature)
     const now = new Date();
-    const lastOutdoorTemp = filteredData.length > 0 ? (filteredData[filteredData.length - 1].WeatherTemperatureF || 70) : 70;
-    const outdoorForecast = [];
 
-    // Create forecast points for next few hours
-    const currentTime = now;
-    for (let i = 1; i <= 8; i++) { // Next 2 hours in 15-minute intervals
-        const futureTime = new Date(currentTime);
-        futureTime.setMinutes(currentTime.getMinutes() + (i * 15));
+    // Create forecast points to fill the rest of the day until 11:59 PM
+    const endOfDay = new Date(now);
+    endOfDay.setHours(23, 59, 59);
 
-        if (futureTime.getDate() === now.getDate()) { // Only for today
-            // Simple forecast: cooler at night, warmer during day
-            const hour = futureTime.getHours();
-            let tempAdjustment = 0;
-            if (hour >= 6 && hour <= 18) {
-                // Daytime: slightly warmer
-                tempAdjustment = Math.sin((hour - 6) / 12 * Math.PI) * 4;
-            } else {
-                // Nighttime: cooler
-                tempAdjustment = -3;
-            }
+    let currentTime = new Date(now);
+    // Start from the next 15-minute interval
+    currentTime.setMinutes(Math.ceil(currentTime.getMinutes() / 15) * 15, 0, 0);
 
-            timeLabels.push(futureTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
-            indoorTemps.push(null);
-            outdoorTemps.push(null);
-            outdoorForecast.push(Math.round(lastOutdoorTemp + tempAdjustment));
+    while (currentTime <= endOfDay) {
+        // Simple forecast: cooler at night, warmer during day
+        const hour = currentTime.getHours();
+        let tempAdjustment = 0;
+        if (hour >= 6 && hour <= 18) {
+            // Daytime: slightly warmer
+            tempAdjustment = Math.sin((hour - 6) / 12 * Math.PI) * 4;
+        } else {
+            // Nighttime: cooler
+            tempAdjustment = -3;
         }
+
+        timeLabels.push(currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
+        indoorTemps.push(null);
+        outdoorTemps.push(null);
+
+        // Move to next 15-minute interval
+        currentTime.setMinutes(currentTime.getMinutes() + 15);
     }
 
     const datasets = [
+        // Yesterday's data (darker shades, thinner lines)
+        {
+            label: 'Indoor Temperature (Yesterday)',
+            data: indoorTempsYesterday,
+            borderColor: '#2a5599', // Darker shade of blue
+            backgroundColor: 'rgba(42, 85, 153, 0.05)',
+            tension: 0.4,
+            borderWidth: 2, // 25% thinner than 3
+            pointRadius: 1.5, // 25% smaller than 2
+            pointBackgroundColor: '#2a5599',
+            spanGaps: true
+        },
+        {
+            label: 'Outdoor Temperature (Yesterday)',
+            data: outdoorTempsYesterday,
+            borderColor: '#cc9900', // Darker shade of yellow
+            backgroundColor: 'rgba(204, 153, 0, 0.05)',
+            tension: 0.4,
+            borderWidth: 2, // 25% thinner than 3
+            pointRadius: 1.5, // 25% smaller than 2
+            pointBackgroundColor: '#cc9900',
+            spanGaps: true
+        },
+        // Today's data
         {
             label: 'Indoor Temperature',
             data: indoorTemps,
@@ -84,7 +137,7 @@ function createTemperatureChart(todayData) {
             backgroundColor: 'rgba(74, 158, 255, 0.1)',
             tension: 0.4,
             borderWidth: 3,
-            pointRadius: 2, // Smaller circles
+            pointRadius: 2,
             pointBackgroundColor: '#4a9eff',
             spanGaps: true
         },
@@ -95,21 +148,9 @@ function createTemperatureChart(todayData) {
             backgroundColor: 'rgba(255, 204, 0, 0.1)',
             tension: 0.4,
             borderWidth: 3,
-            pointRadius: 2, // Smaller circles
+            pointRadius: 2,
             pointBackgroundColor: '#ffcc00',
             spanGaps: true
-        },
-        {
-            label: 'Outdoor Forecast',
-            data: Array(filteredData.length).fill(null).concat(outdoorForecast),
-            borderColor: 'transparent',
-            backgroundColor: 'rgba(255, 204, 0, 0.3)',
-            pointRadius: 2, // Smaller circles
-            pointBackgroundColor: 'rgba(255, 204, 0, 0.6)',
-            pointBorderColor: '#ffcc00',
-            pointBorderWidth: 2,
-            showLine: false,
-            spanGaps: false
         }
     ];
 
@@ -406,6 +447,18 @@ function createBatteryChart(todayData) {
         batteryChart.destroy();
     }
 
+    // Get yesterday's data
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(0, 0, 0, 0);
+    const endOfYesterday = new Date(yesterday);
+    endOfYesterday.setHours(23, 59, 59, 999);
+
+    const yesterdayData = energyData.filter(point => {
+        const pointDate = convertToPDT(point.LocalTimestamp);
+        return pointDate >= yesterday && pointDate <= endOfYesterday;
+    });
+
     const timeLabels = todayData.map(point => {
         const date = convertToPDT(point.LocalTimestamp);
         return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
@@ -414,30 +467,34 @@ function createBatteryChart(todayData) {
     const powerwallData = todayData.map(point => point.BatteryPercentage || 0);
 
     // Function to create vehicle data with proper gap handling
-    function createVehicleData(vehiclePrefix) {
+    function createVehicleData(vehiclePrefix, dataSet) {
         const vehicleData = [];
         let lastKnownLevel = null;
         let lastKnownTimestamp = null;
 
-        // First, find the last datapoint before today to establish starting level
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
+        // First, find the last datapoint before the dataSet to establish starting level
+        const dataSetStart = new Date();
+        if (dataSet === todayData) {
+            dataSetStart.setHours(0, 0, 0, 0);
+        } else {
+            dataSetStart.setTime(yesterday.getTime());
+        }
 
-        // Look for last available data before today
+        // Look for last available data before dataSet
         for (let i = energyData.length - 1; i >= 0; i--) {
             const point = energyData[i];
             const pointDate = convertToPDT(point.LocalTimestamp);
 
-            if (pointDate < todayStart && point[`${vehiclePrefix}IsAvailable`] && point[`${vehiclePrefix}Battery`] != null) {
+            if (pointDate < dataSetStart && point[`${vehiclePrefix}IsAvailable`] && point[`${vehiclePrefix}Battery`] != null) {
                 lastKnownLevel = point[`${vehiclePrefix}Battery`];
                 lastKnownTimestamp = pointDate;
                 break;
             }
         }
 
-        // Process today's data
-        for (let i = 0; i < todayData.length; i++) {
-            const point = todayData[i];
+        // Process dataSet
+        for (let i = 0; i < dataSet.length; i++) {
+            const point = dataSet[i];
             const pointDate = convertToPDT(point.LocalTimestamp);
 
             if (point[`${vehiclePrefix}IsAvailable`] && point[`${vehiclePrefix}Battery`] != null) {
@@ -467,15 +524,34 @@ function createBatteryChart(todayData) {
         };
     }
 
-    // Create vehicle datasets
-    const model3Result = createVehicleData('Model3');
-    const modelXResult = createVehicleData('ModelX');
+    // Create vehicle datasets for today
+    const model3Result = createVehicleData('Model3', todayData);
+    const modelXResult = createVehicleData('ModelX', todayData);
+
+    // Create vehicle datasets for yesterday
+    const model3YesterdayResult = createVehicleData('Model3', yesterdayData);
+    const modelXYesterdayResult = createVehicleData('ModelX', yesterdayData);
+
+    // Create yesterday's powerwall data
+    const powerwallYesterdayData = yesterdayData.map(point => point.BatteryPercentage || 0);
 
     // Generate predictions for the rest of the day
     const predictions = generateBatteryPredictions(todayData);
     const actualDataCount = todayData.length;
 
     const datasets = [
+        // Yesterday's Powerwall data (darker shade)
+        {
+            label: 'Powerwall (Yesterday)',
+            data: powerwallYesterdayData,
+            borderColor: '#006600', // Darker shade of green
+            backgroundColor: 'rgba(0, 102, 0, 0.05)',
+            tension: 0.4,
+            borderWidth: 2,
+            spanGaps: true,
+            pointStyle: 'circle',
+            pointRadius: 1
+        },
         // Actual Powerwall data
         {
             label: 'Powerwall',
@@ -488,9 +564,9 @@ function createBatteryChart(todayData) {
             pointStyle: 'circle',
             pointRadius: 2
         },
-        // Predicted Powerwall data
+        // Predicted Powerwall data (no legend)
         {
-            label: 'Powerwall (Predicted)',
+            label: '',
             data: Array(actualDataCount).fill(null).concat(predictions.powerwall),
             borderColor: 'transparent', // No connecting lines
             backgroundColor: 'rgba(0, 204, 0, 0.3)',
@@ -501,6 +577,21 @@ function createBatteryChart(todayData) {
             showLine: false
         }
     ];
+
+    // Add yesterday's Model 3 dataset if we have data
+    if (model3YesterdayResult.lastKnownLevel !== null) {
+        datasets.push({
+            label: 'Model 3 (Yesterday)',
+            data: model3YesterdayResult.data,
+            borderColor: '#aa2222', // Darker shade of red
+            backgroundColor: 'rgba(170, 34, 34, 0.05)',
+            tension: 0.4,
+            borderWidth: 2,
+            spanGaps: true,
+            pointStyle: 'circle',
+            pointRadius: 1
+        });
+    }
 
     // Add Model 3 dataset if we have data
     if (model3Result.lastKnownLevel !== null) {
@@ -516,10 +607,10 @@ function createBatteryChart(todayData) {
             pointRadius: 3
         });
 
-        // Add Model 3 predictions if available
+        // Add Model 3 predictions if available (no legend)
         if (predictions.model3.some(val => val !== null)) {
             datasets.push({
-                label: 'Model 3 (Predicted)',
+                label: '',
                 data: Array(actualDataCount).fill(null).concat(predictions.model3),
                 borderColor: 'transparent',
                 backgroundColor: 'rgba(255, 68, 68, 0.3)',
@@ -530,6 +621,21 @@ function createBatteryChart(todayData) {
                 showLine: false
             });
         }
+    }
+
+    // Add yesterday's Model X dataset if we have data
+    if (modelXYesterdayResult.lastKnownLevel !== null) {
+        datasets.push({
+            label: 'Model X (Yesterday)',
+            data: modelXYesterdayResult.data,
+            borderColor: '#223377', // Darker shade of blue
+            backgroundColor: 'rgba(34, 51, 119, 0.05)',
+            tension: 0.4,
+            borderWidth: 2,
+            spanGaps: true,
+            pointStyle: 'circle',
+            pointRadius: 1
+        });
     }
 
     // Add Model X dataset if we have data
@@ -546,10 +652,10 @@ function createBatteryChart(todayData) {
             pointRadius: 3
         });
 
-        // Add Model X predictions if available
+        // Add Model X predictions if available (no legend)
         if (predictions.modelX.some(val => val !== null)) {
             datasets.push({
-                label: 'Model X (Predicted)',
+                label: '',
                 data: Array(actualDataCount).fill(null).concat(predictions.modelX),
                 borderColor: 'transparent',
                 backgroundColor: 'rgba(68, 119, 255, 0.3)',
@@ -574,7 +680,11 @@ function createBatteryChart(todayData) {
             plugins: {
                 legend: {
                     labels: {
-                        color: '#ffffff'
+                        color: '#ffffff',
+                        filter: function (legendItem) {
+                            // Hide legend items with empty labels (predicted data)
+                            return legendItem.text !== '';
+                        }
                     }
                 }
             },

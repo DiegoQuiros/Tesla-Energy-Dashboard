@@ -50,16 +50,20 @@ class ChartMaximizer {
         this.maximizedChart = container;
         this.originalParent = container.parentNode;
 
-        // Create placeholder to hold the grid position
-        this.placeholder = document.createElement('div');
-        this.placeholder.className = container.className; // Copy classes for styling
-        this.placeholder.style.height = `${container.clientHeight}px`;
-        this.placeholder.style.width = `${container.clientWidth}px`;
+        // ✅ Store original dimensions
+        this.originalWidth = container.clientWidth;
+        this.originalHeight = container.clientHeight;
 
-        // Replace container with placeholder in the grid
+        // Create placeholder
+        this.placeholder = document.createElement('div');
+        this.placeholder.className = container.className;
+        this.placeholder.style.height = `${this.originalHeight}px`;
+        this.placeholder.style.width = `${this.originalWidth}px`;
+
+        // Replace container with placeholder
         this.originalParent.replaceChild(this.placeholder, container);
 
-        // Append container to body for maximization
+        // Move container to body
         document.body.appendChild(container);
 
         // Add maximized class and reset inline styles
@@ -75,10 +79,7 @@ class ChartMaximizer {
             button.className = 'close-btn';
         }
 
-        // Trigger chart resize after DOM changes
-        setTimeout(() => {
-            this.resizeChart(chartId);
-        }, 100);
+        setTimeout(() => this.resizeChart(chartId), 100);
     }
 
     minimize() {
@@ -89,30 +90,25 @@ class ChartMaximizer {
 
         // Remove maximized class and reset inline styles
         container.classList.remove('chart-maximized');
-        container.style.width = '';
-        container.style.height = '';
         document.body.classList.remove('chart-maximized-active');
 
         // Remove container from body
         document.body.removeChild(container);
 
-        // Replace placeholder with original container
+        // Replace placeholder with container
         this.originalParent.replaceChild(container, this.placeholder);
         this.placeholder = null;
 
-        // Restore button
+        // ✅ Restore original size
+        container.style.width = this.originalWidth + 'px';
+        container.style.height = this.originalHeight + 'px';
+
         const button = container.querySelector('.close-btn');
         if (button) {
             button.textContent = 'Maximize';
             button.className = 'maximize-btn';
         }
 
-        // Force grid reflow
-        this.originalParent.style.display = 'none';
-        this.originalParent.offsetHeight; // Trigger reflow
-        this.originalParent.style.display = '';
-
-        // Trigger window resize to update charts and layout
         setTimeout(() => {
             this.resizeChart(chartId);
             window.dispatchEvent(new Event('resize'));
