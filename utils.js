@@ -59,11 +59,35 @@ function refreshStaleDataLabels() {
         thermostatStaleInfo.textContent = thermostatAge;
     }
 
-    // Update Model 3 stale info
-    updateVehicleStaleInfo('Model3', 'model3', latest, now);
+    // Update Model 3 stale info (now in energy flow section)
+    updateModel3StaleInfo(latest, now);
 
     // Update Model X stale info
     updateVehicleStaleInfo('ModelX', 'modelX', latest, now);
+}
+
+// Helper function to update Model 3 stale info in energy flow section
+function updateModel3StaleInfo(latest, currentTime) {
+    const staleInfoElement = document.getElementById('model3StaleInfo');
+    if (!staleInfoElement) return;
+
+    let dataTimestamp = null;
+
+    if (latest.Model3IsAvailable) {
+        // Vehicle is currently available - use latest timestamp
+        dataTimestamp = lastDataTimestamp;
+    } else {
+        // Vehicle is offline, find last available data timestamp
+        const lastData = findLastVehicleData('Model3');
+        if (lastData) {
+            dataTimestamp = convertToPDT(lastData.data.LocalTimestamp);
+        }
+    }
+
+    if (dataTimestamp) {
+        const dataAge = formatTimeDifference(dataTimestamp, currentTime);
+        staleInfoElement.textContent = dataAge;
+    }
 }
 
 // Helper function to update vehicle stale info

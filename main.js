@@ -51,7 +51,7 @@ function scheduleSmartRefresh() {
     nextUpdateTime.setMinutes(nextQuarter, 0, 0); // Set to next quarter hour
 
     // Add 10 seconds buffer to ensure data is available
-    const refreshTime = new Date(nextUpdateTime.getTime() + 10000); // +10 seconds
+    const refreshTime = new Date(nextUpdateTime.getTime() + 25000); // +25 seconds
 
     const now = new Date();
     const timeUntilRefresh = refreshTime.getTime() - now.getTime();
@@ -59,7 +59,7 @@ function scheduleSmartRefresh() {
     // If the calculated time is in the past or too soon, wait for the next 15-minute interval
     if (timeUntilRefresh <= 0) {
         nextUpdateTime.setMinutes(nextUpdateTime.getMinutes() + 15);
-        const newRefreshTime = new Date(nextUpdateTime.getTime() + 10000);
+        const newRefreshTime = new Date(nextUpdateTime.getTime() + 15000);
         const newTimeUntilRefresh = newRefreshTime.getTime() - now.getTime();
 
         console.log(`Smart refresh scheduled for ${newRefreshTime.toLocaleTimeString()} (in ${Math.round(newTimeUntilRefresh / 1000 / 60)} minutes)`);

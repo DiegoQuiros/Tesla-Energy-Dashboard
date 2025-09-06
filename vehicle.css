@@ -1,0 +1,78 @@
+/* Model 3 styling updates for Energy Flow section */
+
+.vehicle-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 8px;
+}
+
+.vehicle-info {
+    background: rgba(0, 0, 0, 0.8);
+    border-radius: 8px;
+    padding: 8px;
+    margin-top: 8px;
+    min-width: 120px;
+    text-align: center;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.vehicle-battery-percent {
+    font-size: 1.4rem;
+    font-weight: bold;
+    color: #e91e63;
+    margin-bottom: 4px;
+}
+
+.vehicle-battery {
+    width: 80px;
+    height: 12px;
+    background: #333;
+    border-radius: 6px;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid #555;
+}
+
+.battery-fill-vehicle {
+    height: 100%;
+    background: linear-gradient(90deg, #4caf50 0%, #8bc34a 100%);
+    transition: width 0.3s ease;
+    border-radius: 5px;
+}
+
+.vehicle-charging {
+    font-size: 0.8rem;
+    color: #4caf50;
+    margin-bottom: 4px;
+}
+
+/* Update the existing tesla-vehicle container to accommodate new layout */
+.tesla-vehicle {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    max-width: 340px;
+}
+
+    /* Offline data styling for Model 3 in energy flow */
+    .tesla-vehicle.offline-data .vehicle-image {
+        opacity: 0.6;
+        filter: grayscale(50%);
+    }
+
+    .tesla-vehicle.offline-data .vehicle-info {
+        opacity: 0.8;
+        background: rgba(0, 0, 0, 0.6);
+    }
+
+    /* Charging state styling */
+    .tesla-vehicle.charging .vehicle-image {
+        box-shadow: 0 4px 15px rgba(76, 175, 80, 0.6);
+    }
+
+    .tesla-vehicle.charging .vehicle-battery-percent {
+        color: #4caf50;
+    }

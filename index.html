@@ -6,6 +6,7 @@
     <title>Tesla Energy Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="indexStyleSheet.css">
+    <link rel="stylesheet" href="vehicle.css">
 </head>
 <body>
     <div class="container">
@@ -24,30 +25,121 @@
         </div>
 
         <div id="dashboard" style="display: none;">
-            <!-- Energy Flow Section -->
+            <!-- Enhanced Energy Flow Section -->
             <div class="energy-flow-section">
                 <h2>⚡ Energy Flow</h2>
-                <div class="energy-charts-container">
-                    <div class="energy-chart-card">
-                        <h3>🔋 Energy Creation</h3>
-                        <div class="doughnut-chart-wrapper">
-                            <canvas id="energyCreationChart"></canvas>
-                            <div class="chart-center-text">
-                                <div class="center-value" id="totalCreation">-- kW</div>
-                                <div class="center-label">Total</div>
-                            </div>
+                <div class="flow-visualization">
+                    <!-- House structure -->
+                    <div class="house-container">
+                        <div class="house">
                         </div>
                     </div>
 
-                    <div class="energy-chart-card">
-                        <h3>⚡ Energy Usage</h3>
-                        <div class="doughnut-chart-wrapper">
-                            <canvas id="energyUsageChart"></canvas>
-                            <div class="chart-center-text">
-                                <div class="center-value" id="totalUsage">-- kW</div>
-                                <div class="center-label">Total</div>
-                            </div>
+                    <!-- Sun icon for solar -->
+                    <div class="sun-container">
+                        <div class="sun-icon">
+                            <div class="sun-power" id="flowSolarValue">6.5 kW</div>
                         </div>
+                    </div>
+
+                    <!-- Tesla vehicles on the left -->
+                    <div class="vehicles-container" style="width: 450px;">
+                        <table style="width: 450px;">
+                            <tr>
+                                <td style="width: 320px;">
+                                    <div class="tesla-vehicle">
+                                        <div class="card" style="width: 300px; padding: 15px;">
+                                            <div class="battery-level">
+                                                <div class="battery-info">
+                                                    <span id="model3Percent">--%</span>
+                                                    <span id="model3Kwh" class="kwh-display">-- kWh</span>
+                                                </div>
+                                                <div class="battery-bar-container">
+                                                    <div class="battery-bar gradient-bar">
+                                                        <div class="battery-fill" id="model3Bar" style="width: 0%"></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div style="margin-top: 10px; font-size: 0.9rem; color: #ccc;">
+                                                <div>Status: <span id="model3Status">--</span></div>
+                                                <div>Range: <span id="model3Range">-- mi</span></div>
+                                                <div class="stale-info" id="model3StaleInfo" style="display: none;"></div>
+                                            </div>
+                                        </div>
+                                        <div style="font-size: 1.2rem; color: #e91e63; font-weight: bold;">MODEL 3</div>
+                                    </div>
+                                </td>
+                                <td style="width: 130px;">
+                                    <div id="model3Card" class="flow-energy-node2 flow-grid-node2">
+                                        <div class="flow-energy-value" id="flowGridValue"><span id="model3ChargingRate">-- kW</span></div>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr style="height:50px;">
+                                <td></td>
+                                <td></td>
+                            </tr>
+                            <tr>
+                                <td style="width: 320px;">
+                                    <div class="tesla-vehicle">
+                                        <div class="card" style="width: 300px; padding: 15px;">
+                                            <div class="battery-level">
+                                                <div class="battery-info">
+                                                    <span id="modelXPercent">--%</span>
+                                                    <span id="modelXKwh" class="kwh-display">-- kWh</span>
+                                                </div>
+                                                <div class="battery-bar-container">
+                                                    <div class="battery-bar gradient-bar">
+                                                        <div class="battery-fill" id="modelXBar" style="width: 0%"></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div style="margin-top: 10px; font-size: 0.9rem; color: #ccc;">
+                                                <div>Status: <span id="modelXStatus">--</span></div>
+                                                <div>Range: <span id="modelXRange">-- mi</span></div>
+                                                <div class="stale-info" id="modelXStaleInfo" style="display: none;"></div>
+                                            </div>
+                                        </div>
+
+                                        <div style="font-size: 1.2rem; color: #2196f3; font-weight: bold;">MODEL X</div>
+                                    </div>
+                                </td>
+                                <td style="width: 130px;">
+                                    <div id="modelXCard" class="flow-energy-node2 flow-grid-node2">
+                                        <div class="flow-energy-value" id="flowGridValue"><span id="modelXChargingRate">-- kW</span></div>
+                                    </div>
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <!-- Electrical tower for grid -->
+                    <div class="electrical-tower">
+                        <div class="tower-base"></div>
+                        <div class="tower-cross"></div>
+                        <div class="power-lines"></div>
+                    </div>
+
+                    <!-- Powerwall unit at bottom center -->
+                    <div class="powerwall-unit"></div>
+
+                    <!-- Energy nodes -->
+                    <!-- Home consumption inside house -->
+                    <div class="flow-energy-node flow-home-node">
+                        <div class="flow-energy-value" id="flowHomeValue">0.3 kW</div>
+                        <div class="flow-energy-label">HOME</div>
+                    </div>
+
+                    <!-- Powerwall below the unit -->
+                    <div class="flow-energy-node flow-powerwall-node">
+                        <div class="flow-energy-value" id="flowPowerwallValue">0.2 kW • 82%</div>
+                        <div class="flow-energy-label">POWERWALL</div>
+                    </div>
+
+                    <!-- Grid next to electrical tower -->
+                    <div class="flow-energy-node flow-grid-node">
+                        <div class="flow-energy-value" id="flowGridValue">0 kW</div>
+                        <div class="flow-energy-label" id="flowGridLabel">GRID</div>
                     </div>
                 </div>
             </div>
@@ -111,50 +203,6 @@
                             <div class="power-value" id="gridPower">-- kW</div>
                             <div class="power-label">Grid</div>
                         </div>
-                    </div>
-                </div>
-
-                <!-- Model 3 Card -->
-                <div class="card" id="model3Card">
-                    <h3>🚗 Model 3</h3>
-                    <div class="battery-level">
-                        <div class="battery-info">
-                            <span id="model3Percent">--%</span>
-                            <span id="model3Kwh" class="kwh-display">-- kWh</span>
-                        </div>
-                        <div class="battery-bar-container">
-                            <div class="battery-bar gradient-bar">
-                                <div class="battery-fill" id="model3Bar" style="width: 0%"></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div style="margin-top: 10px; font-size: 0.9rem; color: #ccc;">
-                        <div>Status: <span id="model3Status">--</span></div>
-                        <div>Range: <span id="model3Range">-- mi</span></div>
-                        <div id="model3Charging" style="display: none;">Charging: <span id="model3ChargingRate">-- kW</span></div>
-                        <div class="stale-info" id="model3StaleInfo" style="display: none;"></div>
-                    </div>
-                </div>
-
-                <!-- Model X Card -->
-                <div class="card" id="modelXCard">
-                    <h3>🚙 Model X</h3>
-                    <div class="battery-level">
-                        <div class="battery-info">
-                            <span id="modelXPercent">--%</span>
-                            <span id="modelXKwh" class="kwh-display">-- kWh</span>
-                        </div>
-                        <div class="battery-bar-container">
-                            <div class="battery-bar gradient-bar">
-                                <div class="battery-fill" id="modelXBar" style="width: 0%"></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div style="margin-top: 10px; font-size: 0.9rem; color: #ccc;">
-                        <div>Status: <span id="modelXStatus">--</span></div>
-                        <div>Range: <span id="modelXRange">-- mi</span></div>
-                        <div id="modelXCharging" style="display: none;">Charging: <span id="modelXChargingRate">-- kW</span></div>
-                        <div class="stale-info" id="modelXStaleInfo" style="display: none;"></div>
                     </div>
                 </div>
             </div>

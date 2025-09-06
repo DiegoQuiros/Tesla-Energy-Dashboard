@@ -1,4 +1,3 @@
-
 async function loadEnergyData() {
     try {
         console.log('Loading energy data from:', AZURE_BLOB_URL);
@@ -99,92 +98,13 @@ function updateDashboard() {
     gridElement.textContent = `${Math.abs(gridPower).toFixed(1)} kW`;
     gridElement.className = `power-value ${gridPower > 0 ? 'grid-positive' : gridPower < 0 ? 'grid-negative' : ''}`;
 
-    // Update Model 3
+    // Update Model X (Model 3 is now handled in energy flow section)
     updateVehicleCard('Model3', 'model3', latest, now, BATTERY_CAPACITIES.MODEL_3);
-
-    // Update Model X
     updateVehicleCard('ModelX', 'modelX', latest, now, BATTERY_CAPACITIES.MODEL_X);
 
     // Show dashboard
     document.getElementById('loading').style.display = 'none';
     document.getElementById('dashboard').style.display = 'block';
-}
-
-function updateEnergyFlow(latest) {
-    const solarPower = latest.SolarPowerKw || 0;
-    const batteryPower = latest.BatteryPowerKw || 0; // Negative = charging, Positive = discharging
-    const gridPower = latest.GridPowerKw || 0; // Negative = exporting, Positive = importing
-    const loadPower = latest.LoadPowerKw || 0;
-
-    // Calculate approximate energy distribution
-    const model3ChargingPower = (latest.Model3IsCharging && latest.Model3ChargerPowerKw) ? latest.Model3ChargerPowerKw : 0;
-    const modelXChargingPower = (latest.ModelXIsCharging && latest.ModelXChargerPowerKw) ? latest.ModelXChargerPowerKw : 0;
-    const totalVehicleCharging = model3ChargingPower + modelXChargingPower;
-
-    // Calculate thermostat power consumption - only if status is not OFF
-    let thermostatPower = 0;
-    if (latest.ThermostatIsOnline && latest.ThermostatStatus && latest.ThermostatStatus !== 'OFF') {
-        if (latest.ThermostatIsActivelyRunning) {
-            thermostatPower = 5.6;
-        } else {
-            thermostatPower = 0.9; // Air Wave fan running
-        }
-    }
-
-    // Update solar generation
-    document.getElementById('solarGeneration').textContent = `${solarPower.toFixed(1)} kW`;
-
-    // Update thermostat energy
-    const thermostatElement = document.getElementById('thermostatEnergy');
-    const thermostatStatusElement = document.getElementById('thermostatEnergyStatus');
-    thermostatElement.textContent = `${thermostatPower.toFixed(1)} kW`;
-    thermostatElement.className = thermostatPower > 0 ? 'energy-value small energy-charging' : 'energy-value small energy-inactive';
-    thermostatStatusElement.textContent = latest.ThermostatStatus === 'OFF' ? 'Off' :
-        (latest.ThermostatIsActivelyRunning ? latest.ThermostatStatus : 'Fan');
-
-    // Update Powerwall energy
-    const powerwallElement = document.getElementById('powerwallEnergy');
-    const powerwallStatusElement = document.getElementById('powerwallEnergyStatus');
-    powerwallElement.textContent = `${Math.abs(batteryPower).toFixed(1)} kW`;
-    if (batteryPower < -0.1) {
-        powerwallElement.className = 'energy-value small energy-charging';
-        powerwallStatusElement.textContent = 'Charging';
-    } else if (batteryPower > 0.1) {
-        powerwallElement.className = 'energy-value small energy-discharging';
-        powerwallStatusElement.textContent = 'Discharging';
-    } else {
-        powerwallElement.className = 'energy-value small energy-inactive';
-        powerwallStatusElement.textContent = 'Idle';
-    }
-
-    // Update Model 3 energy
-    const model3Element = document.getElementById('model3Energy');
-    const model3StatusElement = document.getElementById('model3EnergyStatus');
-    model3Element.textContent = `${model3ChargingPower.toFixed(1)} kW`;
-    model3Element.className = model3ChargingPower > 0 ? 'energy-value small energy-charging' : 'energy-value small energy-inactive';
-    model3StatusElement.textContent = latest.Model3IsCharging ? 'Charging' : (latest.Model3IsAvailable ? 'Ready' : 'Offline');
-
-    // Update Model X energy
-    const modelXElement = document.getElementById('modelxEnergy');
-    const modelXStatusElement = document.getElementById('modelxEnergyStatus');
-    modelXElement.textContent = `${modelXChargingPower.toFixed(1)} kW`;
-    modelXElement.className = modelXChargingPower > 0 ? 'energy-value small energy-charging' : 'energy-value small energy-inactive';
-    modelXStatusElement.textContent = latest.ModelXIsCharging ? 'Charging' : (latest.ModelXIsAvailable ? 'Ready' : 'Offline');
-
-    // Update Grid energy
-    const gridElement = document.getElementById('gridEnergy');
-    const gridStatusElement = document.getElementById('gridEnergyStatus');
-    gridElement.textContent = `${Math.abs(gridPower).toFixed(1)} kW`;
-    if (gridPower > 0.1) {
-        gridElement.className = 'energy-value small energy-grid-import';
-        gridStatusElement.textContent = 'Importing';
-    } else if (gridPower < -0.1) {
-        gridElement.className = 'energy-value small energy-grid-export';
-        gridStatusElement.textContent = 'Exporting';
-    } else {
-        gridElement.className = 'energy-value small energy-inactive';
-        gridStatusElement.textContent = 'Balanced';
-    }
 }
 
 function updateThermostatCard(latest, currentTime) {
@@ -236,7 +156,6 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
     const barElement = document.getElementById(`${cardPrefix}Bar`);
     const statusElement = document.getElementById(`${cardPrefix}Status`);
     const rangeElement = document.getElementById(`${cardPrefix}Range`);
-    const chargingDiv = document.getElementById(`${cardPrefix}Charging`);
     const chargingRateElement = document.getElementById(`${cardPrefix}ChargingRate`);
     const staleInfoElement = document.getElementById(`${cardPrefix}StaleInfo`);
 
@@ -273,10 +192,7 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
         rangeElement.textContent = `${Math.round(dataToUse[`${vehiclePrefix}EstimatedRangeMiles`] || 0)} mi`;
 
         if (dataToUse[`${vehiclePrefix}IsCharging`] && latest[`${vehiclePrefix}IsAvailable`]) {
-            chargingDiv.style.display = 'block';
             chargingRateElement.textContent = `${dataToUse[`${vehiclePrefix}ChargerPowerKw`] || 0} kW`;
-        } else {
-            chargingDiv.style.display = 'none';
         }
 
         // Always show data age
@@ -290,7 +206,6 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
         barElement.style.width = '100%'; // Full coverage when no data
         statusElement.textContent = 'No Data';
         rangeElement.textContent = '-- mi';
-        chargingDiv.style.display = 'none';
         staleInfoElement.style.display = 'none';
     }
 }

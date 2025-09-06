@@ -1,111 +1,114 @@
 function updateEnergyFlowCharts(latest) {
+    // Update the house visualization
+    updateEnergyFlowHouse(latest);
+}
+
+// Update the energy flow house visualization when data changes
+function updateEnergyFlowHouse(latest) {
+    // Update solar in the sun icon
     const solarPower = latest.SolarPowerKw || 0;
-    const batteryPower = latest.BatteryPowerKw || 0; // Negative = charging, Positive = discharging
-    const gridPower = latest.GridPowerKw || 0; // Negative = exporting, Positive = importing
+    document.getElementById('flowSolarValue').textContent = `${solarPower.toFixed(1)} kW`;
 
-    // Energy Creation Sources
-    const energyCreation = [];
-    const creationLabels = [];
-    const creationColors = [];
-
-    if (solarPower > 0) {
-        energyCreation.push(solarPower);
-        creationLabels.push('Solar Panels');
-        creationColors.push('#ffcc00');
+    // Update sun brightness based on solar production
+    const sunIcon = document.querySelector('.sun-icon');
+    if (sunIcon) {
+        const brightness = Math.min(1, solarPower / 10);
+        const opacity = 0.4 + (brightness * 0.6);
+        sunIcon.style.opacity = opacity;
+        sunIcon.style.boxShadow = `0 0 ${20 + brightness * 30}px rgba(255, 193, 7, ${0.3 + brightness * 0.5})`;
     }
 
-    if (batteryPower > 0) {
-        energyCreation.push(batteryPower);
-        creationLabels.push('Powerwall Discharge');
-        creationColors.push('#ff4444');
+    // Change Model 3 color when charging
+    const model3Car = document.getElementById('model3Card');
+    if (latest.Model3IsCharging) {
+        model3Car.style.background = 'linear-gradient(135deg, #39833c 0%, #225e25 100%)';
+        model3Car.style.boxShadow = '0 4px 12px rgba(76, 175, 80, 0.6)';
+    } else {
+        /*model3Car.style.background = 'linear-gradient(135deg, #2196f3 0%, #1976d2 100%)';*/
+        model3Car.style.boxShadow = '0 4px 8px rgba(0,0,0,0.3)';
     }
 
-    if (gridPower > 0) {
-        energyCreation.push(gridPower);
-        creationLabels.push('Grid Import');
-        creationColors.push('#ff6b35');
+    // Change Model X color when charging
+    const modelXCar = document.getElementById('modelXCard');
+    if (latest.ModelXIsCharging) {
+        modelXCar.style.background = 'linear-gradient(135deg, #39833c 0%, #225e25 100%)';
+        modelXCar.style.boxShadow = '0 4px 12px rgba(76, 175, 80, 0.6)';
+    } else {
+        /*modelXCar.style.background = 'linear-gradient(135deg, #2196f3 0%, #1976d2 100%)';*/
+        modelXCar.style.boxShadow = '0 4px 8px rgba(0,0,0,0.3)';
     }
 
-    // Calculate total energy creation
-    const totalCreation = solarPower + (batteryPower > 0 ? batteryPower : 0) + (gridPower > 0 ? gridPower : 0);
+    // Update Powerwall
+    const batteryPower = latest.BatteryPowerKw || 0;
+    document.getElementById('flowPowerwallValue').textContent =
+        `${Math.abs(batteryPower).toFixed(1)} kW • ${(latest.BatteryPercentage || 0).toFixed(0)}%`;
 
-    // Energy Usage Destinations
-    const energyUsage = [];
-    const usageLabels = [];
-    const usageColors = [];
+    // Update Powerwall unit color based on charging/discharging
+    const powerwallUnit = document.querySelector('.powerwall-unit');
+    const powerwallNode = document.querySelector('.flow-powerwall-node');
 
-    // Powerwall charging (negative battery power)
     if (batteryPower < 0) {
-        energyUsage.push(Math.abs(batteryPower));
-        usageLabels.push('Powerwall Charging');
-        usageColors.push('#00cc00');
+        // Charging
+        powerwallUnit.style.background = 'linear-gradient(180deg, #4caf50 0%, #2e7d32 100%)';
+        powerwallUnit.style.borderColor = '#66bb6a';
+        powerwallUnit.style.boxShadow = '0 4px 12px rgba(76, 175, 80, 0.6)';
+        powerwallNode.style.borderColor = '#00cc00';
+        powerwallNode.style.background = 'rgba(0, 204, 0, 0.15)';
+    } else if (batteryPower > 0) {
+        // Discharging
+        powerwallUnit.style.background = 'linear-gradient(180deg, #ff9800 0%, #f57c00 100%)';
+        powerwallUnit.style.borderColor = '#ffb74d';
+        powerwallUnit.style.boxShadow = '0 4px 12px rgba(255, 152, 0, 0.6)';
+        powerwallNode.style.borderColor = '#ff9800';
+        powerwallNode.style.background = 'rgba(255, 152, 0, 0.15)';
+    } else {
+        // Idle
+        powerwallUnit.style.background = 'linear-gradient(180deg, #4caf50 0%, #2e7d32 100%)';
+        powerwallUnit.style.borderColor = '#66bb6a';
+        powerwallUnit.style.boxShadow = '0 4px 12px rgba(76, 175, 80, 0.4)';
+        powerwallNode.style.borderColor = '#00cc00';
+        powerwallNode.style.background = 'rgba(0, 204, 0, 0.15)';
     }
 
-    // Grid export (negative grid power)
-    if (gridPower < 0) {
-        energyUsage.push(Math.abs(gridPower));
-        usageLabels.push('Grid Export');
-        usageColors.push('#00ff88');
-    }
+    // Calculate home consumption
+    const model3ChargingPower = (latest.Model3IsCharging && latest.Model3ChargerPowerKw) ? latest.Model3ChargerPowerKw : 0;
+    const modelXChargingPower = (latest.ModelXIsCharging && latest.ModelXChargerPowerKw) ? latest.ModelXChargerPowerKw : 0;
+    const totalVehicleCharging = model3ChargingPower + modelXChargingPower;
 
-    // Thermostat power consumption - only if thermostat status is not OFF
     let thermostatPower = 0;
     if (latest.ThermostatIsOnline && latest.ThermostatStatus && latest.ThermostatStatus !== 'OFF') {
-        // Check if actively running (full 5.6kW) or just fan running (~0.9kW for Air Wave)
-        if (latest.ThermostatIsActivelyRunning) {
-            thermostatPower = 5.6;
-        } else {
-            // Thermostat is ON but not actively heating/cooling - could be fan running (Air Wave)
-            thermostatPower = 0.9;
-        }
+        thermostatPower = latest.ThermostatIsActivelyRunning ? 5.6 : 0.9;
     }
 
-    if (thermostatPower > 0) {
-        energyUsage.push(thermostatPower);
-        usageLabels.push('Thermostat');
-        usageColors.push('#4a9eff');
+    const loadPower = latest.LoadPowerKw || 0;
+    const housePower = Math.max(0, loadPower - totalVehicleCharging - thermostatPower);
+
+    document.getElementById('flowHomeValue').textContent = `${housePower.toFixed(1)} kW`;
+
+    // Grid display
+    const gridPower = latest.GridPowerKw || 0;
+    document.getElementById('flowGridValue').textContent = `${Math.abs(gridPower).toFixed(1)} kW`;
+
+    const gridNode = document.querySelector('.flow-grid-node');
+    const gridLabel = document.getElementById('flowGridLabel');
+    const electricalTower = document.querySelector('.electrical-tower');
+
+    if (gridPower > 0.1) {
+        gridNode.style.borderColor = '#ff6b35';
+        gridNode.style.background = 'rgba(255, 107, 53, 0.15)';
+        gridLabel.textContent = 'IMPORTING';
+        electricalTower.style.filter = 'brightness(1.2) drop-shadow(0 0 10px rgba(255, 107, 53, 0.5))';
+    } else if (gridPower < -0.1) {
+        gridNode.style.borderColor = '#00ff88';
+        gridNode.style.background = 'rgba(0, 255, 136, 0.15)';
+        gridLabel.textContent = 'EXPORTING';
+        electricalTower.style.filter = 'brightness(1.2) drop-shadow(0 0 10px rgba(0, 255, 136, 0.5))';
+    } else {
+        gridNode.style.borderColor = '#4a9eff';
+        gridNode.style.background = 'rgba(74, 158, 255, 0.15)';
+        gridLabel.textContent = 'GRID';
+        electricalTower.style.filter = 'brightness(1)';
     }
-
-    // Model 3 charging
-    const model3ChargingPower = (latest.Model3IsCharging && latest.Model3ChargerPowerKw) ? latest.Model3ChargerPowerKw : 0;
-    if (model3ChargingPower > 0) {
-        energyUsage.push(model3ChargingPower);
-        usageLabels.push('Model 3 Charging');
-        usageColors.push('#ff6666');
-    }
-
-    // Model X charging
-    const modelXChargingPower = (latest.ModelXIsCharging && latest.ModelXChargerPowerKw) ? latest.ModelXChargerPowerKw : 0;
-    if (modelXChargingPower > 0) {
-        energyUsage.push(modelXChargingPower);
-        usageLabels.push('Model X Charging');
-        usageColors.push('#6677ff');
-    }
-
-    // Calculate house power as remainder to ensure total creation = total usage
-    const categorizedUsage = Math.abs(batteryPower < 0 ? batteryPower : 0) +
-        (gridPower < 0 ? Math.abs(gridPower) : 0) +
-        thermostatPower +
-        model3ChargingPower +
-        modelXChargingPower;
-
-    const housePower = Math.max(0, totalCreation - categorizedUsage);
-    if (housePower > 0.1) {
-        energyUsage.push(housePower);
-        usageLabels.push('House');
-        usageColors.push('#9f7aea');
-    }
-
-    // Calculate totals (should be equal now)
-    const totalCreationSum = energyCreation.reduce((sum, val) => sum + val, 0);
-    const totalUsageSum = energyUsage.reduce((sum, val) => sum + val, 0);
-
-    document.getElementById('totalCreation').textContent = `${totalCreationSum.toFixed(1)} kW`;
-    document.getElementById('totalUsage').textContent = `${totalUsageSum.toFixed(1)} kW`;
-
-    // Create or update charts
-    createEnergyCreationChart(energyCreation, creationLabels, creationColors);
-    createEnergyUsageChart(energyUsage, usageLabels, usageColors);
 }
 
 function createEnergyCreationChart(data, labels, colors) {
@@ -225,4 +228,3 @@ function createEnergyUsageChart(data, labels, colors) {
         }
     });
 }
-
