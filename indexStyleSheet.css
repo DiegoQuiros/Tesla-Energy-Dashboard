@@ -708,3 +708,34 @@ body {
     opacity: 0.8;
     color: #cccccc;
 }
+
+/* Make charts full-viewport width and one-per-row */
+.charts-grid {
+    display: block;
+}
+
+/* Stretch each chart container to full viewport width and center it */
+.charts-grid .chart-container {
+    width: 95vw;
+    margin-left: calc(50% - 47vw); /* center full-viewport element inside centered .container */    
+    border-radius: 0; /* optional: remove rounded corners so background spans edge-to-edge */
+    padding-left: 30px;
+    padding-right: 30px;
+    box-shadow: none; /* optional: remove outer shadow for edge-to-edge look */
+    margin-bottom: 30px;
+    max-width: none;
+}
+
+/* Ensure chart area uses full width inside the container */
+.charts-grid .chart-container .chart-wrapper {
+    width: 95%;
+}
+
+/* Keep better spacing on small screens */
+@media (max-width: 768px) {
+    .charts-grid .chart-container {
+        padding-left: 15px;
+        padding-right: 15px;
+        margin-left: calc(50% - 50vw);
+    }
+}

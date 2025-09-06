@@ -66,12 +66,12 @@
                                                 <div class="stale-info" id="model3StaleInfo" style="display: none;"></div>
                                             </div>
                                         </div>
-                                        <div style="font-size: 1.2rem; color: #e91e63; font-weight: bold;">MODEL 3</div>
                                     </div>
                                 </td>
                                 <td style="width: 130px;">
                                     <div id="model3Card" class="flow-energy-node2 flow-grid-node2">
                                         <div class="flow-energy-value" id="flowGridValue"><span id="model3ChargingRate">-- kW</span></div>
+                                        <div style="font-size: 1rem; opacity: 0.8; color: #e91e63; font-weight: bold;">Model 3</div>
                                     </div>
                                 </td>
                             </tr>
@@ -100,13 +100,12 @@
                                                 <div class="stale-info" id="modelXStaleInfo" style="display: none;"></div>
                                             </div>
                                         </div>
-
-                                        <div style="font-size: 1.2rem; color: #2196f3; font-weight: bold;">MODEL X</div>
                                     </div>
                                 </td>
                                 <td style="width: 130px;">
                                     <div id="modelXCard" class="flow-energy-node2 flow-grid-node2">
                                         <div class="flow-energy-value" id="flowGridValue"><span id="modelXChargingRate">-- kW</span></div>
+                                        <div style="font-size: 1rem; opacity: 0.8; color: #2196f3; font-weight: bold;">Model X</div>
                                     </div>
                                 </td>
                             </tr>
@@ -137,7 +136,7 @@
                     </div>
 
                     <!-- Grid next to electrical tower -->
-                    <div class="flow-energy-node flow-grid-node">
+                    <div class="flow-energy-node flow-grid-node" style="right: 160px !important;">
                         <div class="flow-energy-value" id="flowGridValue">0 kW</div>
                         <div class="flow-energy-label" id="flowGridLabel">GRID</div>
                     </div>
@@ -208,6 +207,17 @@
             </div>
 
             <div class="charts-grid">
+                <!-- Battery Levels Chart -->
+                <div class="chart-container" id="batteryChartContainer">
+                    <h3>
+                        🔋 Battery Levels Today
+                        <button class="maximize-btn" id="batteryMaximizeBtn">Maximize</button>
+                    </h3>
+                    <div class="chart-wrapper">
+                        <canvas id="batteryChart"></canvas>
+                    </div>
+                </div>
+
                 <!-- Temperature Comparison Chart -->
                 <div class="chart-container" id="temperatureChartContainer">
                     <h3>
@@ -227,17 +237,6 @@
                     </h3>
                     <div class="chart-wrapper">
                         <canvas id="solarChart"></canvas>
-                    </div>
-                </div>
-
-                <!-- Battery Levels Chart -->
-                <div class="chart-container" id="batteryChartContainer">
-                    <h3>
-                        🔋 Battery Levels Today
-                        <button class="maximize-btn" id="batteryMaximizeBtn">Maximize</button>
-                    </h3>
-                    <div class="chart-wrapper">
-                        <canvas id="batteryChart"></canvas>
                     </div>
                 </div>
             </div>
