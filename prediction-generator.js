@@ -1,4 +1,3 @@
-
 function generateBatteryPredictions(todayData) {
     if (todayData.length === 0) {
         return { labels: [], powerwall: [], model3: [], modelX: [] };
@@ -16,9 +15,28 @@ function generateBatteryPredictions(todayData) {
         modelX: []
     };
 
+    // Get yesterday's data for solar forecasting
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(0, 0, 0, 0);
+    const endOfYesterday = new Date(yesterday);
+    endOfYesterday.setHours(23, 59, 59, 999);
+
+    const yesterdayData = energyData.filter(point => {
+        const pointDate = convertToPDT(point.LocalTimestamp);
+        return pointDate >= yesterday && pointDate <= endOfYesterday;
+    });
+
     // Generate 15-minute interval predictions until end of day
     let currentTime = new Date(now);
-    currentTime.setMinutes(Math.ceil(currentTime.getMinutes() / 15) * 15, 0, 0); // Round to next 15-minute mark
+    let minutes = currentTime.getMinutes();
+    let roundedMinutes = Math.floor(minutes / 15) * 15;
+
+    if (currentTime.getSeconds() > 0 || currentTime.getMilliseconds() > 0 || minutes % 15 !== 0) {
+        roundedMinutes += 15;
+    }
+
+    currentTime.setMinutes(roundedMinutes, 0, 0);
 
     // Convert current battery percentage to kWh for Powerwall
     let currentPowerwallKwh = ((latest.BatteryPercentage || 0) / 100) * BATTERY_CAPACITIES.POWERWALL;
@@ -55,18 +73,26 @@ function generateBatteryPredictions(todayData) {
     totalConsumptionKw += houseBaseConsumption;
 
     // Get current solar and grid input
-    const solarPowerKw = latest.SolarPowerKw || 0;
+    let currentSolarPowerKw = latest.SolarPowerKw || 0;
     const gridImportKw = Math.max(0, latest.GridPowerKw || 0);
-    const totalEnergyInputKw = solarPowerKw + gridImportKw;
 
-    // Net drain on Powerwall = total consumption - total energy input
-    // If positive, Powerwall discharges; if negative, Powerwall charges
-    const netPowerwallDrainKw = totalConsumptionKw - totalEnergyInputKw;
-
-    console.log(`Powerwall prediction: Current=${currentPowerwallKwh.toFixed(1)}kWh, Net drain=${netPowerwallDrainKw.toFixed(1)}kW, Total consumption=${totalConsumptionKw.toFixed(1)}kW`);
+    console.log(`Powerwall prediction: Starting with ${currentPowerwallKwh.toFixed(1)}kWh, Total consumption=${totalConsumptionKw.toFixed(1)}kW`);
 
     while (currentTime <= endOfDay) {
         predictions.labels.push(currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
+
+        // Calculate solar forecast change based on yesterday's data
+        const solarForecastDelta = getSolarForecastDelta(yesterdayData, currentTime);
+        const forecastSolarPowerKw = Math.max(0, currentSolarPowerKw + solarForecastDelta);
+
+        // Update current solar for next iteration
+        currentSolarPowerKw = forecastSolarPowerKw;
+
+        const totalEnergyInputKw = forecastSolarPowerKw + gridImportKw;
+
+        // Net drain on Powerwall = total consumption - total energy input
+        // If positive, Powerwall discharges; if negative, Powerwall charges
+        const netPowerwallDrainKw = totalConsumptionKw - totalEnergyInputKw;
 
         // Powerwall prediction based on net energy drain
         if (netPowerwallDrainKw > 0) {
@@ -75,10 +101,23 @@ function generateBatteryPredictions(todayData) {
             currentPowerwallKwh = Math.max(0, currentPowerwallKwh - energyConsumedIn15Min);
         } else if (netPowerwallDrainKw < 0) {
             // Excess energy is charging the Powerwall
-            const energyGainedIn15Min = Math.abs(netPowerwallDrainKw) * 0.25;
+            let energyGainedIn15Min = Math.abs(netPowerwallDrainKw) * 0.25;
+
+            // Add solar production forecast delta to charging calculation
+            const solarEnergyDelta = solarForecastDelta * 0.25; // Convert kW to kWh for 15 minutes
+            energyGainedIn15Min += solarEnergyDelta;
+
             currentPowerwallKwh = Math.min(BATTERY_CAPACITIES.POWERWALL, currentPowerwallKwh + energyGainedIn15Min);
         }
-        // If netPowerwallDrainKw is 0, no change to Powerwall
+        // If netPowerwallDrainKw is 0, still apply solar forecast delta
+        else {
+            const solarEnergyDelta = solarForecastDelta * 0.25; // Convert kW to kWh for 15 minutes
+            if (solarEnergyDelta > 0) {
+                currentPowerwallKwh = Math.min(BATTERY_CAPACITIES.POWERWALL, currentPowerwallKwh + solarEnergyDelta);
+            } else if (solarEnergyDelta < 0) {
+                currentPowerwallKwh = Math.max(0, currentPowerwallKwh + solarEnergyDelta);
+            }
+        }
 
         // Convert kWh back to percentage
         const powerwallPercentage = (currentPowerwallKwh / BATTERY_CAPACITIES.POWERWALL) * 100;
@@ -105,4 +144,64 @@ function generateBatteryPredictions(todayData) {
     }
 
     return predictions;
+}
+
+/**
+ * Gets the solar production delta based on yesterday's data at the same time
+ * @param {Array} yesterdayData - Array of yesterday's energy data points
+ * @param {Date} currentTime - Current prediction time
+ * @returns {number} Solar power delta in kW
+ */
+function getSolarForecastDelta(yesterdayData, currentTime) {
+    if (yesterdayData.length === 0) {
+        return 0;
+    }
+
+    // Calculate the equivalent time yesterday (-24 hours)
+    const yesterdayTime = new Date(currentTime);
+    yesterdayTime.setDate(yesterdayTime.getDate() - 1);
+
+    // Calculate the time 15 minutes before yesterday (-24 hours - 15 minutes)
+    const yesterdayTimeMinus15 = new Date(yesterdayTime);
+    yesterdayTimeMinus15.setMinutes(yesterdayTimeMinus15.getMinutes() - 15);
+
+    // Find closest data points for both times (within 5 minutes tolerance)
+    const baseSolarData = findClosestDataPoint(yesterdayData, yesterdayTimeMinus15, 5);
+    const futureSolarData = findClosestDataPoint(yesterdayData, yesterdayTime, 5);
+
+    if (!baseSolarData || !futureSolarData) {
+        return 0; // No matching data found
+    }
+
+    const baseSolarPower = baseSolarData.SolarPowerKw || 0;
+    const futureSolarPower = futureSolarData.SolarPowerKw || 0;
+
+    const solarDelta = futureSolarPower - baseSolarPower;
+
+    return solarDelta;
+}
+
+/**
+ * Finds the closest data point to a target time within a tolerance
+ * @param {Array} dataPoints - Array of energy data points
+ * @param {Date} targetTime - Target time to search for
+ * @param {number} toleranceMinutes - Maximum allowed time difference in minutes
+ * @returns {Object|null} Closest data point or null if none found within tolerance
+ */
+function findClosestDataPoint(dataPoints, targetTime, toleranceMinutes = 5) {
+    let closestPoint = null;
+    let closestDifference = Infinity;
+
+    for (const point of dataPoints) {
+        const pointTime = convertToPDT(point.LocalTimestamp);
+        const timeDifference = Math.abs(pointTime.getTime() - targetTime.getTime());
+        const timeDifferenceMinutes = timeDifference / (1000 * 60);
+
+        if (timeDifferenceMinutes <= toleranceMinutes && timeDifference < closestDifference) {
+            closestDifference = timeDifference;
+            closestPoint = point;
+        }
+    }
+
+    return closestPoint;
 }

@@ -98,7 +98,6 @@ function updateDashboard() {
     gridElement.textContent = `${Math.abs(gridPower).toFixed(1)} kW`;
     gridElement.className = `power-value ${gridPower > 0 ? 'grid-positive' : gridPower < 0 ? 'grid-negative' : ''}`;
 
-    // Update Model X (Model 3 is now handled in energy flow section)
     updateVehicleCard('Model3', 'model3', latest, now, BATTERY_CAPACITIES.MODEL_3);
     updateVehicleCard('ModelX', 'modelX', latest, now, BATTERY_CAPACITIES.MODEL_X);
 
@@ -159,6 +158,12 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
     const chargingRateElement = document.getElementById(`${cardPrefix}ChargingRate`);
     const staleInfoElement = document.getElementById(`${cardPrefix}StaleInfo`);
 
+    // Check if all required elements exist
+    if (!percentElement || !kwhElement || !barElement || !statusElement || !rangeElement || !staleInfoElement) {
+        console.warn(`Some vehicle display elements not found for ${cardPrefix}`);
+        return;
+    }
+
     let dataToUse = null;
     let dataTimestamp = null;
 
@@ -175,6 +180,8 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
             dataToUse = lastData.data;
             dataTimestamp = convertToPDT(lastData.data.LocalTimestamp);
         }
+        else
+            console.warn(`No last data found for ${vehiclePrefix}`);
     }
 
     if (dataToUse && dataTimestamp) {
@@ -191,9 +198,15 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
 
         rangeElement.textContent = `${Math.round(dataToUse[`${vehiclePrefix}EstimatedRangeMiles`] || 0)} mi`;
 
-        if (dataToUse[`${vehiclePrefix}IsCharging`] && latest[`${vehiclePrefix}IsAvailable`]) {
-            chargingRateElement.textContent = `${dataToUse[`${vehiclePrefix}ChargerPowerKw`] || 0} kW`;
+        if (chargingRateElement) {
+            if (dataToUse[`${vehiclePrefix}IsCharging`] && latest[`${vehiclePrefix}IsAvailable`]) {
+                chargingRateElement.textContent = `${dataToUse[`${vehiclePrefix}ChargerPowerKw`] || 0} kW`;
+            } else {
+                chargingRateElement.textContent = '-- kW';
+            }
         }
+        else
+            console.warn(`Charging rate element not found for ${cardPrefix}`);
 
         // Always show data age
         const dataAge = formatTimeDifference(dataTimestamp, currentTime);
@@ -206,6 +219,12 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
         barElement.style.width = '100%'; // Full coverage when no data
         statusElement.textContent = 'No Data';
         rangeElement.textContent = '-- mi';
+        if (chargingRateElement) {
+            chargingRateElement.textContent = '-- kW';
+        }
+        else
+            console.warn(`Charging rate element not found for ${cardPrefix}`);
+
         staleInfoElement.style.display = 'none';
     }
 }

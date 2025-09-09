@@ -18,25 +18,49 @@ function updateEnergyFlowHouse(latest) {
         sunIcon.style.boxShadow = `0 0 ${20 + brightness * 30}px rgba(255, 193, 7, ${0.3 + brightness * 0.5})`;
     }
 
+    // Update Model 3 charging rate display
+    const model3ChargingRateElement = document.getElementById('model3ChargingRate');
+    if (model3ChargingRateElement) {
+        if (latest.Model3IsCharging && latest.Model3ChargerPowerKw) {
+            model3ChargingRateElement.textContent = `${latest.Model3ChargerPowerKw} kW`;
+        } else {
+            model3ChargingRateElement.textContent = '-- kW';
+        }
+    }
+    else
+        console.warn('Model 3 charging rate element not found');    
+
+    // Update Model X charging rate display  
+    const modelXChargingRateElement = document.getElementById('modelXChargingRate');
+    if (modelXChargingRateElement) {
+        if (latest.ModelXIsCharging && latest.ModelXChargerPowerKw) {
+            modelXChargingRateElement.textContent = `${latest.ModelXChargerPowerKw} kW`;
+        } else {
+            modelXChargingRateElement.textContent = '-- kW';
+        }
+    }
+    else
+        console.warn('Model X charging rate element not found');
+
     // Change Model 3 color when charging
     const model3Car = document.getElementById('model3Card');
-    if (latest.Model3IsCharging) {
-        model3Car.style.background = 'linear-gradient(135deg, #39833c 0%, #225e25 100%)';
-        model3Car.style.boxShadow = '0 4px 12px rgba(76, 175, 80, 0.6)';
-    } else {
-        /*model3Car.style.background = 'linear-gradient(135deg, #2196f3 0%, #1976d2 100%)';*/
-        model3Car.style.boxShadow = '0 4px 8px rgba(0,0,0,0.3)';
-    }
+        if (latest.Model3IsCharging) {
+            model3Car.style.background = 'linear-gradient(135deg, #39833c 0%, #225e25 100%)';
+            model3Car.style.boxShadow = '0 4px 12px rgba(76, 175, 80, 0.6)';
+        } else {
+            model3Car.style.background = '';
+            model3Car.style.boxShadow = '0 4px 8px rgba(0,0,0,0.3)';
+        }
 
     // Change Model X color when charging
-    const modelXCar = document.getElementById('modelXCard');
-    if (latest.ModelXIsCharging) {
-        modelXCar.style.background = 'linear-gradient(135deg, #39833c 0%, #225e25 100%)';
-        modelXCar.style.boxShadow = '0 4px 12px rgba(76, 175, 80, 0.6)';
-    } else {
-        /*modelXCar.style.background = 'linear-gradient(135deg, #2196f3 0%, #1976d2 100%)';*/
-        modelXCar.style.boxShadow = '0 4px 8px rgba(0,0,0,0.3)';
-    }
+    const modelXCard = document.getElementById('modelXCard');
+        if (latest.ModelXIsCharging) {
+            modelXCard.style.background = 'linear-gradient(135deg, #39833c 0%, #225e25 100%)';
+            modelXCard.style.boxShadow = '0 4px 12px rgba(76, 175, 80, 0.6)';
+        } else {
+            modelXCard.style.background = '';
+            modelXCard.style.boxShadow = '0 4px 8px rgba(0,0,0,0.3)';
+        }
 
     // Update Powerwall
     const batteryPower = latest.BatteryPowerKw || 0;
@@ -87,7 +111,13 @@ function updateEnergyFlowHouse(latest) {
 
     // Grid display
     const gridPower = latest.GridPowerKw || 0;
-    document.getElementById('flowGridValue').textContent = `${Math.abs(gridPower).toFixed(1)} kW`;
+    const flowGridElements = document.querySelectorAll('#flowGridValue');
+    if (flowGridElements.length > 0) {
+        // Update the grid power display (there might be multiple elements with this ID)
+        flowGridElements[flowGridElements.length - 1].textContent = `${Math.abs(gridPower).toFixed(1)} kW`;
+    }
+    else
+        console.warn('No elements found with ID flowGridValue');
 
     const gridNode = document.querySelector('.flow-grid-node');
     const gridLabel = document.getElementById('flowGridLabel');
