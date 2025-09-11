@@ -4,7 +4,15 @@ function generateBatteryPredictions(todayData) {
     }
 
     const latest = todayData[todayData.length - 1];
-    const now = convertToPDT(latest.LocalTimestamp);
+
+    // Use time navigator's current time if available, otherwise use latest data timestamp
+    let now;
+    if (window.timeNavigator && !window.timeNavigator.isInLiveMode()) {
+        now = window.timeNavigator.getCurrentTime();
+    } else {
+        now = convertToPDT(latest.LocalTimestamp);
+    }
+
     const endOfDay = new Date(now);
     endOfDay.setHours(23, 59, 59);
 
@@ -15,14 +23,20 @@ function generateBatteryPredictions(todayData) {
         modelX: []
     };
 
-    // Get yesterday's data for solar forecasting
+    // Get yesterday's data for solar forecasting relative to current time
     const yesterday = new Date(now);
     yesterday.setDate(yesterday.getDate() - 1);
     yesterday.setHours(0, 0, 0, 0);
     const endOfYesterday = new Date(yesterday);
     endOfYesterday.setHours(23, 59, 59, 999);
 
-    const yesterdayData = energyData.filter(point => {
+    // Use filtered data if in historical mode
+    let dataSource = energyData;
+    if (window.timeNavigator && !window.timeNavigator.isInLiveMode()) {
+        dataSource = window.timeNavigator.getFilteredData();
+    }
+
+    const yesterdayData = dataSource.filter(point => {
         const pointDate = convertToPDT(point.LocalTimestamp);
         return pointDate >= yesterday && pointDate <= endOfYesterday;
     });
@@ -43,96 +57,80 @@ function generateBatteryPredictions(todayData) {
     let currentModel3Level = latest.Model3Battery || 0;
     let currentModelXLevel = latest.ModelXBattery || 0;
 
-    // Calculate total power consumption rate including thermostat
-    let totalConsumptionKw = 0;
-
-    // Add thermostat consumption only if status is not OFF
-    if (latest.ThermostatIsOnline && latest.ThermostatStatus && latest.ThermostatStatus !== 'OFF') {
-        if (latest.ThermostatIsActivelyRunning) {
-            totalConsumptionKw += 5.6; // Full AC/heating power
-        } else {
-            totalConsumptionKw += 0.9; // Just fan running (Air Wave)
-        }
-    }
-
-    // Add vehicle charging if active
-    if (latest.Model3IsCharging && latest.Model3ChargerPowerKw) {
-        totalConsumptionKw += latest.Model3ChargerPowerKw;
-    }
-    if (latest.ModelXIsCharging && latest.ModelXChargerPowerKw) {
-        totalConsumptionKw += latest.ModelXChargerPowerKw;
-    }
-
-    // Add base house consumption (estimated from load power minus known consumers)
-    const loadPower = latest.LoadPowerKw || 0;
-    const knownConsumption = (latest.ThermostatIsOn && latest.ThermostatIsOnline ?
-        (latest.ThermostatIsActivelyRunning ? 5.6 : 0.9) : 0) +
-        (latest.Model3IsCharging ? (latest.Model3ChargerPowerKw || 0) : 0) +
-        (latest.ModelXIsCharging ? (latest.ModelXChargerPowerKw || 0) : 0);
-    const houseBaseConsumption = Math.max(0, loadPower - knownConsumption);
-    totalConsumptionKw += houseBaseConsumption;
-
     // Get current solar and grid input
-    let currentSolarPowerKw = latest.SolarPowerKw || 0;
     const gridImportKw = Math.max(0, latest.GridPowerKw || 0);
 
-    console.log(`Powerwall prediction: Starting with ${currentPowerwallKwh.toFixed(1)}kWh, Total consumption=${totalConsumptionKw.toFixed(1)}kW`);
+    //console.log(`Powerwall prediction: Starting with ${currentPowerwallKwh.toFixed(1)}kWh, Total consumption=${totalConsumptionKw.toFixed(1)}kW`);
 
     while (currentTime <= endOfDay) {
         predictions.labels.push(currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
 
-        // Calculate solar forecast change based on yesterday's data
-        const solarForecastDelta = getSolarForecastDelta(yesterdayData, currentTime);
-        const forecastSolarPowerKw = Math.max(0, currentSolarPowerKw + solarForecastDelta);
+        // Calculate total power consumption rate including thermostat
+        let totalConsumptionKw = 0;
 
-        // Update current solar for next iteration
-        currentSolarPowerKw = forecastSolarPowerKw;
-
-        const totalEnergyInputKw = forecastSolarPowerKw + gridImportKw;
-
-        // Net drain on Powerwall = total consumption - total energy input
-        // If positive, Powerwall discharges; if negative, Powerwall charges
-        const netPowerwallDrainKw = totalConsumptionKw - totalEnergyInputKw;
-
-        // Powerwall prediction based on net energy drain
-        if (netPowerwallDrainKw > 0) {
-            // Powerwall is discharging to meet demand
-            const energyConsumedIn15Min = netPowerwallDrainKw * 0.25; // kW * 0.25 hours = kWh
-            currentPowerwallKwh = Math.max(0, currentPowerwallKwh - energyConsumedIn15Min);
-        } else if (netPowerwallDrainKw < 0) {
-            // Excess energy is charging the Powerwall
-            let energyGainedIn15Min = Math.abs(netPowerwallDrainKw) * 0.25;
-
-            // Add solar production forecast delta to charging calculation
-            const solarEnergyDelta = solarForecastDelta * 0.25; // Convert kW to kWh for 15 minutes
-            energyGainedIn15Min += solarEnergyDelta;
-
-            currentPowerwallKwh = Math.min(BATTERY_CAPACITIES.POWERWALL, currentPowerwallKwh + energyGainedIn15Min);
-        }
-        // If netPowerwallDrainKw is 0, still apply solar forecast delta
-        else {
-            const solarEnergyDelta = solarForecastDelta * 0.25; // Convert kW to kWh for 15 minutes
-            if (solarEnergyDelta > 0) {
-                currentPowerwallKwh = Math.min(BATTERY_CAPACITIES.POWERWALL, currentPowerwallKwh + solarEnergyDelta);
-            } else if (solarEnergyDelta < 0) {
-                currentPowerwallKwh = Math.max(0, currentPowerwallKwh + solarEnergyDelta);
+        // Add thermostat consumption only if status is not OFF
+        if (latest.ThermostatIsOnline && latest.ThermostatStatus && latest.ThermostatStatus !== 'OFF') {
+            if (latest.ThermostatIsActivelyRunning) {
+                totalConsumptionKw += 5.6; // Full AC/heating power
+            } else {
+                totalConsumptionKw += 0.9; // Just fan running (Air Wave)
             }
         }
+
+        // MODEL 3
+        if (latest.Model3IsCharging && latest.Model3ChargeAmps) {
+            // If current time is after today at 2:15 PM AND today is a weekday, treat Model 3 charger power as 0
+            const todayTwoFifteen = new Date(currentTime);
+            todayTwoFifteen.setHours(14, 15, 0, 0);
+
+            // Weekday: Monday (1) to Friday (5)
+            const isWeekday = currentTime.getDay() >= 1 && currentTime.getDay() <= 5;
+
+            if (isWeekday && currentTime > todayTwoFifteen) {
+                latest.LoadPowerKw -= latest.Model3ChargerPowerKw || 0;
+                latest.Model3ChargerPowerKw = 0;
+            } else {
+                latest.Model3ChargerPowerKw = latest.Model3ChargeAmps * 249 / 1000;
+            }
+
+            totalConsumptionKw += latest.Model3ChargerPowerKw;
+        }
+
+        // MODEL X
+        if (latest.ModelXIsCharging && latest.ModelXChargeAmps) {
+            latest.ModelXChargerPowerKw = latest.ModelXChargeAmps * 249 / 1000;
+            totalConsumptionKw += latest.ModelXChargerPowerKw;
+        }
+
+        // Add base house consumption (estimated from load power minus known consumers)
+        const loadPower = latest.LoadPowerKw || 0;
+        const knownConsumption = (latest.ThermostatIsOn && latest.ThermostatIsOnline ?
+            (latest.ThermostatIsActivelyRunning ? 5.6 : 0.9) : 0) +
+            (latest.Model3IsCharging ? (latest.Model3ChargerPowerKw || 0) : 0) +
+            (latest.ModelXIsCharging ? (latest.ModelXChargerPowerKw || 0) : 0);
+        const houseBaseConsumption = Math.max(0, loadPower - knownConsumption);
+        totalConsumptionKw += houseBaseConsumption;
+
+        // Calculate solar forecast change based on yesterday's data
+        const solarForecastDelta = getSolarForecastDelta(yesterdayData, currentTime);
+
+        const powerWallChargeRate = Math.min(5, solarForecastDelta - totalConsumptionKw + gridImportKw); // kW, typical Powerwall charge rate
+        currentPowerwallKwh = currentPowerwallKwh + powerWallChargeRate * 0.25;
+
+        currentPowerwallKwh = Math.max(0, currentPowerwallKwh);
+        currentPowerwallKwh = Math.min(BATTERY_CAPACITIES.POWERWALL, currentPowerwallKwh);
 
         // Convert kWh back to percentage
         const powerwallPercentage = (currentPowerwallKwh / BATTERY_CAPACITIES.POWERWALL) * 100;
 
         // Vehicle charging predictions (unchanged)
         if (latest.Model3IsCharging && latest.Model3ChargerPowerKw > 0) {
-            // Calculate charging rate per 15 minutes
-            const chargingRateKw = latest.Model3ChargerPowerKw;
-            const percentageGainIn15Min = (chargingRateKw * 0.25 / BATTERY_CAPACITIES.MODEL_3) * 100;
+            const percentageGainIn15Min = (latest.Model3ChargerPowerKw * 0.25 / BATTERY_CAPACITIES.MODEL_3) * 100;
             currentModel3Level = Math.min(100, currentModel3Level + percentageGainIn15Min);
         }
 
         if (latest.ModelXIsCharging && latest.ModelXChargerPowerKw > 0) {
-            const chargingRateKw = latest.ModelXChargerPowerKw;
-            const percentageGainIn15Min = (chargingRateKw * 0.25 / BATTERY_CAPACITIES.MODEL_X) * 100;
+            const percentageGainIn15Min = (latest.ModelXChargerPowerKw * 0.25 / BATTERY_CAPACITIES.MODEL_X) * 100;
             currentModelXLevel = Math.min(100, currentModelXLevel + percentageGainIn15Min);
         }
 
@@ -161,24 +159,14 @@ function getSolarForecastDelta(yesterdayData, currentTime) {
     const yesterdayTime = new Date(currentTime);
     yesterdayTime.setDate(yesterdayTime.getDate() - 1);
 
-    // Calculate the time 15 minutes before yesterday (-24 hours - 15 minutes)
-    const yesterdayTimeMinus15 = new Date(yesterdayTime);
-    yesterdayTimeMinus15.setMinutes(yesterdayTimeMinus15.getMinutes() - 15);
-
     // Find closest data points for both times (within 5 minutes tolerance)
-    const baseSolarData = findClosestDataPoint(yesterdayData, yesterdayTimeMinus15, 5);
     const futureSolarData = findClosestDataPoint(yesterdayData, yesterdayTime, 5);
 
-    if (!baseSolarData || !futureSolarData) {
+    if (!futureSolarData) {
         return 0; // No matching data found
     }
 
-    const baseSolarPower = baseSolarData.SolarPowerKw || 0;
-    const futureSolarPower = futureSolarData.SolarPowerKw || 0;
-
-    const solarDelta = futureSolarPower - baseSolarPower;
-
-    return solarDelta;
+    return futureSolarData.SolarPowerKw;
 }
 
 /**

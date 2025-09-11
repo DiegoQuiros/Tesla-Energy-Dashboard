@@ -1,4 +1,3 @@
-
 // Auto-refresh every 5 minutes
 function startAutoRefresh() {
     setInterval(() => {
@@ -18,17 +17,55 @@ function startStaleDataTimer() {
 document.addEventListener('DOMContentLoaded', function () {
     // Wait a bit for Chart.js to fully load
     setTimeout(() => {
-        loadEnergyData();
+        loadEnergyData().then(() => {
+            // After data is loaded, set up time navigator callbacks
+            setupTimeNavigatorCallbacks();
+        });
         startAutoRefresh();
         startStaleDataTimer(); // Start the stale data refresh timer
         startSmartAutoRefresh(); // Start the smart auto-refresh mechanism
     }, 100);
 });
 
+// Set up time navigator callbacks after everything is initialized
+function setupTimeNavigatorCallbacks() {
+    // Wait for time navigator to be ready
+    const waitForTimeNavigator = () => {
+        if (window.timeNavigator) {
+            console.log('Setting up time navigator callbacks');
+
+            // Subscribe to time changes
+            window.timeNavigator.subscribe((currentTime, isLive) => {
+                console.log(`Time changed: ${isLive ? 'Live Mode' : currentTime.toLocaleString()}`);
+                console.log('Updating dashboard and charts for new time...');
+
+                // Force update dashboard
+                updateDashboard();
+
+                // Force update charts
+                if (typeof createCharts === 'function') {
+                    createCharts();
+                }
+            });
+        } else {
+            // Retry after 100ms if time navigator isn't ready yet
+            setTimeout(waitForTimeNavigator, 100);
+        }
+    };
+
+    waitForTimeNavigator();
+}
+
 let smartRefreshTimeout = null;
 
 // Calculate next refresh time based on last data timestamp
 function scheduleSmartRefresh() {
+    // Don't schedule refresh in historical mode
+    if (window.timeNavigator && !window.timeNavigator.isInLiveMode()) {
+        console.log('Historical mode active, skipping smart refresh scheduling');
+        return;
+    }
+
     // Clear any existing timeout
     if (smartRefreshTimeout) {
         clearTimeout(smartRefreshTimeout);
@@ -89,12 +126,14 @@ function startSmartAutoRefresh() {
     // Initial schedule
     scheduleSmartRefresh();
 
-    // Keep the existing 15-minute fallback timer as backup
+    // Keep the existing 15-minute fallback timer as backup, but only in live mode
     setInterval(() => {
-        console.log('Fallback refresh triggered...');
-        loadEnergyData().then(() => {
-            // Reschedule smart refresh in case it got out of sync
-            scheduleSmartRefresh();
-        });
+        if (!window.timeNavigator || window.timeNavigator.isInLiveMode()) {
+            console.log('Fallback refresh triggered...');
+            loadEnergyData().then(() => {
+                // Reschedule smart refresh in case it got out of sync
+                scheduleSmartRefresh();
+            });
+        }
     }, 15 * 60 * 1000); // 15 minutes fallback
 }

@@ -4,7 +4,7 @@ function createCharts() {
         return;
     }
 
-    const todayData = getTodayData();
+    const todayData = getTodayDataForCurrentTime();
     console.log(`Creating charts with ${todayData.length} today's data points`);
 
     if (todayData.length === 0) {
@@ -17,6 +17,13 @@ function createCharts() {
     createBatteryChart(todayData);
 }
 
+// Function to create charts for current time navigator state
+function createChartsForTime() {
+    if (window.timeNavigator) {
+        createCharts();
+    }
+}
+
 function createTemperatureChart(todayData) {
     const ctx = document.getElementById('temperatureChart').getContext('2d');
 
@@ -25,14 +32,23 @@ function createTemperatureChart(todayData) {
         temperatureChart.destroy();
     }
 
-    // Get yesterday's data
-    const yesterday = new Date();
+    // Get yesterday's data relative to current time context
+    let currentTime, dataSource;
+    if (window.timeNavigator && !window.timeNavigator.isInLiveMode()) {
+        currentTime = window.timeNavigator.getCurrentTime();
+        dataSource = window.timeNavigator.getFilteredData();
+    } else {
+        currentTime = new Date();
+        dataSource = energyData;
+    }
+
+    const yesterday = new Date(currentTime);
     yesterday.setDate(yesterday.getDate() - 1);
     yesterday.setHours(0, 0, 0, 0);
     const endOfYesterday = new Date(yesterday);
     endOfYesterday.setHours(23, 59, 59, 999);
 
-    const yesterdayData = energyData.filter(point => {
+    const yesterdayData = dataSource.filter(point => {
         const pointDate = convertToPDT(point.LocalTimestamp);
         return pointDate >= yesterday && pointDate <= endOfYesterday;
     });
@@ -74,14 +90,16 @@ function createTemperatureChart(todayData) {
         (point.WeatherTemperatureF && point.WeatherTemperatureF > -50) ? point.WeatherTemperatureF : null
     );
 
-    // Generate simple forecast for remaining hours (only for outdoor temperature)
-    const now = new Date();
+    // Generate simple forecast for remaining hours (only for outdoor temperature) - only in live mode
+    const now = window.timeNavigator && !window.timeNavigator.isInLiveMode()
+        ? window.timeNavigator.getCurrentTime()
+        : new Date();
 
-    // Create forecast points to fill the rest of the day until 11:59 PM
+    // Create forecast points to fill the rest of the day until 11:59 PM - only in live mode
     const endOfDay = new Date(now);
     endOfDay.setHours(23, 59, 59);
 
-    let currentTime = new Date(now);
+    currentTime = new Date(now);
     // Start from the next 15-minute interval
     currentTime.setMinutes(Math.ceil(currentTime.getMinutes() / 15) * 15, 0, 0);
 
@@ -204,14 +222,23 @@ function createSolarChart(todayData) {
         solarChart.destroy();
     }
 
-    // Get yesterday's data
-    const yesterday = new Date();
+    // Get yesterday's data relative to current time context
+    let currentTime, dataSource;
+    if (window.timeNavigator && !window.timeNavigator.isInLiveMode()) {
+        currentTime = window.timeNavigator.getCurrentTime();
+        dataSource = window.timeNavigator.getFilteredData();
+    } else {
+        currentTime = new Date();
+        dataSource = energyData;
+    }
+
+    const yesterday = new Date(currentTime);
     yesterday.setDate(yesterday.getDate() - 1);
     yesterday.setHours(0, 0, 0, 0);
     const endOfYesterday = new Date(yesterday);
     endOfYesterday.setHours(23, 59, 59, 999);
 
-    const yesterdayData = energyData.filter(point => {
+    const yesterdayData = dataSource.filter(point => {
         const pointDate = convertToPDT(point.LocalTimestamp);
         return pointDate >= yesterday && pointDate <= endOfYesterday;
     });
@@ -502,6 +529,10 @@ function createBatteryChart(todayData) {
                 lastKnownLevel = point[`${vehiclePrefix}Battery`];
                 lastKnownTimestamp = pointDate;
                 vehicleData.push(lastKnownLevel);
+            } else if (i === 0 && lastKnownLevel !== null && dataSet === todayData) {
+                // Special case: first data point of today with no battery data
+                // Use the last known level from yesterday to fill the gap
+                vehicleData.push(lastKnownLevel);
             } else if (lastKnownLevel !== null) {
                 // Vehicle data not available but we have a last known level
                 // For gaps, we omit the datapoint (push null)
@@ -524,13 +555,13 @@ function createBatteryChart(todayData) {
         };
     }
 
-    // Create vehicle datasets for today
-    const model3Result = createVehicleData('Model3', todayData);
-    const modelXResult = createVehicleData('ModelX', todayData);
-
     // Create vehicle datasets for yesterday
     const model3YesterdayResult = createVehicleData('Model3', yesterdayData);
     const modelXYesterdayResult = createVehicleData('ModelX', yesterdayData);
+
+    // Create vehicle datasets for today
+    const model3Result = createVehicleData('Model3', todayData);
+    const modelXResult = createVehicleData('ModelX', todayData);
 
     // Create yesterday's powerwall data
     const powerwallYesterdayData = yesterdayData.map(point => point.BatteryPercentage || 0);

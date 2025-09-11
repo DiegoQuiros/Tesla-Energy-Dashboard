@@ -42,24 +42,44 @@ async function loadEnergyData() {
             }, 1000);
         }
 
+        return Promise.resolve(); // Ensure this returns a resolved promise
+
     } catch (error) {
         console.error('Error loading energy data:', error);
         document.getElementById('loading').style.display = 'none';
         document.getElementById('error').style.display = 'block';
         document.getElementById('errorMessage').textContent = error.message;
+        return Promise.reject(error);
     }
 }
 
 function updateDashboard() {
     if (energyData.length === 0) return;
 
-    const latest = energyData[energyData.length - 1];
-    console.log('Latest data point:', latest);
-    const now = new Date();
-    const lastUpdated = convertToPDT(latest.LocalTimestamp);
+    // Use time navigator if available, otherwise use latest data
+    let latest, now, lastUpdated;
 
-    // Update timestamp
-    document.getElementById('lastUpdated').textContent = `Last updated: ${lastUpdated.toLocaleString()}`;
+    if (window.timeNavigator && !window.timeNavigator.isInLiveMode()) {
+        // Historical mode - use filtered data
+        latest = window.timeNavigator.getLatestDataPoint();
+        if (!latest) return; // No data available for selected time
+
+        now = window.timeNavigator.getCurrentTime();
+        lastUpdated = convertToPDT(latest.LocalTimestamp);
+        console.log('Historical data point:', latest, 'as of:', now.toLocaleString());
+    } else {
+        // Live mode - use latest data
+        latest = energyData[energyData.length - 1];
+        now = new Date();
+        lastUpdated = convertToPDT(latest.LocalTimestamp);
+        console.log('Latest data point:', latest);
+    }
+
+    // Update timestamp with mode indicator
+    const timestampText = window.timeNavigator && !window.timeNavigator.isInLiveMode()
+        ? `Historical view: ${lastUpdated.toLocaleString()}`
+        : `Last updated: ${lastUpdated.toLocaleString()}`;
+    document.getElementById('lastUpdated').textContent = timestampText;
 
     // Update energy flow display
     updateEnergyFlowCharts(latest);
@@ -76,7 +96,7 @@ function updateDashboard() {
     // Update Powerwall
     const batteryPercent = latest.BatteryPercentage || 0;
     document.getElementById('powerwallPercent').textContent = `${batteryPercent.toFixed(1)}%`;
-    document.getElementById('powerwallKwh').textContent = `${calculateKwh(batteryPercent, BATTERY_CAPACITIES.POWERWALL)} kWh`;
+    document.getElementById('powerwallKwh').textContent = `${calculateBatteryKwh(batteryPercent, BATTERY_CAPACITIES.POWERWALL)} kWh`;
     document.getElementById('powerwallBar').style.width = `${100 - batteryPercent}%`; // Invert for gradient effect
 
     // Add stale info for Powerwall
@@ -136,6 +156,14 @@ function updateThermostatCard(latest, currentTime) {
         const dataAge = formatTimeDifference(convertToPDT(latest.LocalTimestamp), currentTime);
         staleInfoElement.textContent = dataAge;
         staleInfoElement.style.display = 'block';
+
+        // Check for temperature crossing alerts
+        const indoorTemp = temp;
+        const outdoorTemp = latest.WeatherTemperatureF || 0;
+
+        if (temperatureAlertSystem && indoorTemp > 0 && outdoorTemp > -50) {
+            temperatureAlertSystem.checkTemperatureCrossing(indoorTemp, outdoorTemp);
+        }
     } else {
         tempElement.textContent = '--';
         modeDisplayElement.textContent = 'Offline';
@@ -187,7 +215,7 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
     if (dataToUse && dataTimestamp) {
         const batteryPercent = dataToUse[`${vehiclePrefix}Battery`] || 0;
         percentElement.textContent = `${batteryPercent}%`;
-        kwhElement.textContent = `${calculateKwh(batteryPercent, batteryCapacity)} kWh`;
+        kwhElement.textContent = `${calculateBatteryKwh(batteryPercent, batteryCapacity)} kWh`;
         barElement.style.width = `${100 - batteryPercent}%`; // Invert for gradient effect
 
         if (latest[`${vehiclePrefix}IsAvailable`]) {
@@ -200,7 +228,9 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
 
         if (chargingRateElement) {
             if (dataToUse[`${vehiclePrefix}IsCharging`] && latest[`${vehiclePrefix}IsAvailable`]) {
-                chargingRateElement.textContent = `${dataToUse[`${vehiclePrefix}ChargerPowerKw`] || 0} kW`;
+                // Use amps to calculate kW charging rate
+                const chargeAmps = dataToUse[`${vehiclePrefix}ChargeAmps`] || 0;
+                chargingRateElement.textContent = `${calculateKwh(chargeAmps)} kW`;
             } else {
                 chargingRateElement.textContent = '-- kW';
             }
@@ -226,5 +256,12 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
             console.warn(`Charging rate element not found for ${cardPrefix}`);
 
         staleInfoElement.style.display = 'none';
+    }
+}
+
+// Function to update dashboard for current time navigator state
+function updateDashboardForTime() {
+    if (window.timeNavigator) {
+        updateDashboard();
     }
 }

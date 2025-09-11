@@ -19,9 +19,59 @@ function formatTimeDifference(date1, date2) {
     }
 }
 
-// Helper function to calculate kWh from percentage
-function calculateKwh(percentage, capacity) {
+// Helper function to update vehicle stale info
+function updateVehicleStaleInfo(vehiclePrefix, cardPrefix, latest, currentTime) {
+    const staleInfoElement = document.getElementById(`${cardPrefix}StaleInfo`);
+    if (!staleInfoElement) return;
+
+    let dataTimestamp = null;
+
+    if (latest[`${vehiclePrefix}IsAvailable`]) {
+        // Vehicle is currently available - use latest timestamp
+        dataTimestamp = lastDataTimestamp;
+    } else {
+        // Vehicle is offline, find last available data timestamp
+        const lastData = findLastVehicleData(vehiclePrefix);
+        if (lastData) {
+            dataTimestamp = convertToPDT(lastData.data.LocalTimestamp);
+        }
+    }
+
+    if (dataTimestamp) {
+        const dataAge = formatTimeDifference(dataTimestamp, currentTime);
+        staleInfoElement.textContent = dataAge;
+    }
+}
+
+function getTodayData() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return energyData.filter(point => {
+        const pointDate = convertToPDT(point.LocalTimestamp);
+        return pointDate >= today;
+    });
+}
+
+function getTodayDataForCurrentTime() {
+    // Use time navigator if available, otherwise use regular getTodayData
+    if (window.timeNavigator) {
+        return window.timeNavigator.getTodayDataForSelectedTime();
+    }
+    return getTodayData();
+}
+
+// Helper function to calculate battery capacity kWh from percentage
+function calculateBatteryKwh(percentage, capacity) {
     return ((percentage / 100) * capacity).toFixed(1);
+}
+
+// Helper function to calculate charging power from amps and voltage
+function calculateKwh(amps, voltage = 249) {
+    if (!amps || amps <= 0) return "0.0";
+    const watts = amps * voltage;
+    const kwh = watts / 1000;
+    return kwh.toFixed(1);
 }
 
 // Function to find the last available data for a vehicle

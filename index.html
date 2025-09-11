@@ -7,14 +7,12 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="indexStyleSheet.css">
     <link rel="stylesheet" href="vehicle.css">
+    <link rel="stylesheet" href="temperature-alerts.css">
+    <link rel="stylesheet" href="time-navigator.css">
+    <link rel="stylesheet" href="chart-collapse.css">
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>⚡ Tesla Energy Dashboard</h1>
-            <div class="last-updated" id="lastUpdated">Loading...</div>
-        </div>
-
         <div id="loading" class="loading">
             <h3>Loading energy data...</h3>
         </div>
@@ -27,7 +25,10 @@
         <div id="dashboard" style="display: none;">
             <!-- Enhanced Energy Flow Section -->
             <div class="energy-flow-section">
-                <h2>⚡ Energy Flow</h2>
+                <div class="header">
+                    <h2>⚡ Energy Flow</h2>
+                    <div class="last-updated" id="lastUpdated">Loading...</div>
+                </div>
                 <div class="flow-visualization">
                     <!-- House structure -->
                     <div class="house-container">
@@ -211,7 +212,10 @@
                 <div class="chart-container" id="batteryChartContainer">
                     <h3>
                         🔋 Battery Levels Today
-                        <button class="maximize-btn" id="batteryMaximizeBtn">Maximize</button>
+                        <div class="chart-buttons">
+                            <button class="collapse-btn" id="batteryCollapseBtn" title="Collapse chart">Collapse</button>
+                            <button class="maximize-btn" id="batteryMaximizeBtn">Maximize</button>
+                        </div>
                     </h3>
                     <div class="chart-wrapper">
                         <canvas id="batteryChart"></canvas>
@@ -222,7 +226,10 @@
                 <div class="chart-container" id="temperatureChartContainer">
                     <h3>
                         🌡️ Temperature Comparison
-                        <button class="maximize-btn" id="temperatureMaximizeBtn">Maximize</button>
+                        <div class="chart-buttons">
+                            <button class="collapse-btn" id="temperatureCollapseBtn" title="Collapse chart">Collapse</button>
+                            <button class="maximize-btn" id="temperatureMaximizeBtn">Maximize</button>
+                        </div>
                     </h3>
                     <div class="chart-wrapper">
                         <canvas id="temperatureChart"></canvas>
@@ -233,7 +240,10 @@
                 <div class="chart-container" id="solarChartContainer">
                     <h3>
                         ☀️ Today's Solar Production
-                        <button class="maximize-btn" id="solarMaximizeBtn">Maximize</button>
+                        <div class="chart-buttons">
+                            <button class="collapse-btn" id="solarCollapseBtn" title="Collapse chart">Collapse</button>
+                            <button class="maximize-btn" id="solarMaximizeBtn">Maximize</button>
+                        </div>
                     </h3>
                     <div class="chart-wrapper">
                         <canvas id="solarChart"></canvas>
@@ -245,11 +255,14 @@
 
     <script src="config.js"></script>
     <script src="utils.js"></script>
+    <script src="temperature-alerts.js"></script>
+    <script src="time-navigator.js"></script>
     <script src="dashboard-updater.js"></script>
     <script src="chart-creator.js"></script>
     <script src="energy-flow-charts.js"></script>
     <script src="prediction-generator.js"></script>
     <script src="chart-maximizer.js"></script>
+    <script src="chart-collapse.js"></script>
     <script src="main.js"></script>
 </body>
 </html>
