@@ -269,7 +269,7 @@ body {
 
     .chart-maximized h3 {
         font-size: 2rem;
-        margin-bottom: 30px;
+        margin-bottom: 10px;
         color: #ff6b35;
         text-align: center;
         display: flex;
@@ -280,7 +280,8 @@ body {
     .chart-maximized .chart-wrapper {
         flex: 1;
         height: auto;
-        min-height: calc(100vh - 120px);
+        min-height: calc(100vh - 160px);
+        max-height: calc(100vh - 160px);
     }
 
 /* Close button for maximized state */
@@ -320,7 +321,8 @@ body {
         }
 
         .chart-maximized .chart-wrapper {
-            min-height: calc(100vh - 100px);
+            min-height: calc(100vh - 140px);
+            max-height: calc(100vh - 140px);
         }
 }
 

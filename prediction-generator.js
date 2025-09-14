@@ -5,6 +5,13 @@ function generateBatteryPredictions(todayData) {
 
     const latest = todayData[todayData.length - 1];
 
+    // Check if simulation is active and use simulated charging settings
+    let simulationSettings = null;
+    if (window.batterySimulator && window.batterySimulator.isSimulationActive()) {
+        simulationSettings = window.batterySimulator.getSimulationSettings();
+        console.log('Using simulation settings for predictions:', simulationSettings);
+    }
+
     // Use time navigator's current time if available, otherwise use latest data timestamp
     let now;
     if (window.timeNavigator && !window.timeNavigator.isInLiveMode()) {
@@ -60,7 +67,11 @@ function generateBatteryPredictions(todayData) {
     // Get current solar and grid input
     const gridImportKw = Math.max(0, latest.GridPowerKw || 0);
 
-    //console.log(`Powerwall prediction: Starting with ${currentPowerwallKwh.toFixed(1)}kWh, Total consumption=${totalConsumptionKw.toFixed(1)}kW`);
+    let Model3IsCharging = latest.Model3IsCharging;
+    let ModelXIsCharging = latest.ModelXIsCharging;
+    let ModelXChargeAmps = latest.ModelXChargeAmps;
+    let Model3ChargeAmps = latest.Model3ChargeAmps;
+    let LoadPowerKw = latest.LoadPowerKw;
 
     while (currentTime <= endOfDay) {
         predictions.labels.push(currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
@@ -77,9 +88,14 @@ function generateBatteryPredictions(todayData) {
             }
         }
 
-        // MODEL 3
-        if (latest.Model3IsCharging && latest.Model3ChargeAmps) {
-            // If current time is after today at 2:15 PM AND today is a weekday, treat Model 3 charger power as 0
+        // MODEL 3 - Use simulation settings if active
+        let model3ChargingPowerKw = 0;
+        if (simulationSettings && simulationSettings.Model3Amps > 0) {
+            // Use simulated charging
+            model3ChargingPowerKw = simulationSettings.Model3Amps * 249 / 1000;
+            totalConsumptionKw += model3ChargingPowerKw;
+        } else if (!simulationSettings && Model3IsCharging && Model3ChargeAmps) {
+            // Use actual charging with weekday 2:15 PM rule (only when simulation is not active)
             const todayTwoFifteen = new Date(currentTime);
             todayTwoFifteen.setHours(14, 15, 0, 0);
 
@@ -87,27 +103,31 @@ function generateBatteryPredictions(todayData) {
             const isWeekday = currentTime.getDay() >= 1 && currentTime.getDay() <= 5;
 
             if (isWeekday && currentTime > todayTwoFifteen) {
-                latest.LoadPowerKw -= latest.Model3ChargerPowerKw || 0;
-                latest.Model3ChargerPowerKw = 0;
+                model3ChargingPowerKw = 0;
             } else {
-                latest.Model3ChargerPowerKw = latest.Model3ChargeAmps * 249 / 1000;
+                model3ChargingPowerKw = Model3ChargeAmps * 249 / 1000;
             }
 
-            totalConsumptionKw += latest.Model3ChargerPowerKw;
+            totalConsumptionKw += model3ChargingPowerKw;
         }
 
-        // MODEL X
-        if (latest.ModelXIsCharging && latest.ModelXChargeAmps) {
-            latest.ModelXChargerPowerKw = latest.ModelXChargeAmps * 249 / 1000;
-            totalConsumptionKw += latest.ModelXChargerPowerKw;
+        // MODEL X - Use simulation settings if active
+        let modelXChargingPowerKw = 0;
+        if (simulationSettings && simulationSettings.ModelXAmps > 0) {
+            // Use simulated charging
+            modelXChargingPowerKw = simulationSettings.ModelXAmps * 249 / 1000;
+            totalConsumptionKw += modelXChargingPowerKw;
+        } else if (!simulationSettings && ModelXIsCharging && ModelXChargeAmps) {
+            // Use actual charging (only when simulation is not active)
+            modelXChargingPowerKw = ModelXChargeAmps * 249 / 1000;
+            totalConsumptionKw += modelXChargingPowerKw;
         }
 
-        // Add base house consumption (estimated from load power minus known consumers)
-        const loadPower = latest.LoadPowerKw || 0;
-        const knownConsumption = (latest.ThermostatIsOn && latest.ThermostatIsOnline ?
+        // Calculate base house consumption
+        const loadPower = LoadPowerKw || 0;
+        const knownConsumption = (latest.ThermostatIsOnline && latest.ThermostatStatus && latest.ThermostatStatus !== 'OFF' ?
             (latest.ThermostatIsActivelyRunning ? 5.6 : 0.9) : 0) +
-            (latest.Model3IsCharging ? (latest.Model3ChargerPowerKw || 0) : 0) +
-            (latest.ModelXIsCharging ? (latest.ModelXChargerPowerKw || 0) : 0);
+            model3ChargingPowerKw + modelXChargingPowerKw;
         const houseBaseConsumption = Math.max(0, loadPower - knownConsumption);
         totalConsumptionKw += houseBaseConsumption;
 
@@ -120,24 +140,67 @@ function generateBatteryPredictions(todayData) {
         currentPowerwallKwh = Math.max(0, currentPowerwallKwh);
         currentPowerwallKwh = Math.min(BATTERY_CAPACITIES.POWERWALL, currentPowerwallKwh);
 
+        // Vehicle charging predictions with simulation support
+        if (simulationSettings && simulationSettings.Model3Amps > 0) {
+            // Use simulation settings for Model 3 - car is charging
+            const percentageGainIn15Min = (model3ChargingPowerKw * 0.25 / BATTERY_CAPACITIES.MODEL_3) * 100;
+            currentModel3Level = Math.min(latest.Model3ChargeLimit, currentModel3Level + percentageGainIn15Min);
+        } else if (simulationSettings && simulationSettings.Model3Amps === 0) {
+            // Simulation is active but car charging is off - keep level flat
+            // currentModel3Level remains unchanged
+        } else if (!simulationSettings && Model3IsCharging && model3ChargingPowerKw > 0) {
+            // Use actual charging data when simulation is not active
+            const percentageGainIn15Min = (model3ChargingPowerKw * 0.25 / BATTERY_CAPACITIES.MODEL_3) * 100;
+            currentModel3Level = Math.min(latest.Model3ChargeLimit, currentModel3Level + percentageGainIn15Min);
+        }
+        if (currentModel3Level >= latest.Model3ChargeLimit && Model3IsCharging) {
+            var overcharge = currentModel3Level - latest.Model3ChargeLimit;
+            currentPowerwallKwh += (overcharge / 100) * BATTERY_CAPACITIES.MODEL_3;
+            if (currentPowerwallKwh > BATTERY_CAPACITIES.POWERWALL)
+                currentPowerwallKwh > BATTERY_CAPACITIES.POWERWALL;
+
+            LoadPowerKw -= Model3ChargeAmps * 249 / 1000;
+            if (LoadPowerKw < 0.234)
+                LoadPowerKw = 0.234; // minimum load when everything is off
+            Model3IsCharging = false;
+            Model3ChargeAmps = 0;
+            currentModel3Level = latest.Model3ChargeLimit;
+        }
+
+        if (simulationSettings && simulationSettings.ModelXAmps > 0) {
+            // Use simulation settings for Model X - car is charging
+            const percentageGainIn15Min = (modelXChargingPowerKw * 0.25 / BATTERY_CAPACITIES.MODEL_X) * 100;
+            currentModelXLevel = Math.min(latest.ModelXChargeLimit, currentModelXLevel + percentageGainIn15Min);
+        } else if (simulationSettings && simulationSettings.ModelXAmps === 0) {
+            // Simulation is active but car charging is off - keep level flat
+            // currentModelXLevel remains unchanged
+        } else if (!simulationSettings && ModelXIsCharging && modelXChargingPowerKw > 0) {
+            // Use actual charging data when simulation is not active
+            const percentageGainIn15Min = (modelXChargingPowerKw * 0.25 / BATTERY_CAPACITIES.MODEL_X) * 100;
+            currentModelXLevel = Math.min(latest.ModelXChargeLimit, currentModelXLevel + percentageGainIn15Min);
+        }
+        if (currentModelXLevel >= latest.ModelXChargeLimit && ModelXIsCharging) {
+            var overcharge = currentModelXLevel - latest.ModelXChargeLimit;
+            currentPowerwallKwh += (overcharge / 100) * BATTERY_CAPACITIES.MODEL_X;
+            if (currentPowerwallKwh > BATTERY_CAPACITIES.POWERWALL)
+                currentPowerwallKwh > BATTERY_CAPACITIES.POWERWALL;
+
+            LoadPowerKw -= ModelXChargeAmps * 249 / 1000;
+            if (LoadPowerKw < 0.234)
+                LoadPowerKw = 0.234; // minimum load when everything is off
+            ModelXIsCharging = false;
+            ModelXChargeAmps = 0;
+            currentModelXLevel = latest.ModelXChargeLimit;
+        }
+
         // Convert kWh back to percentage
         const powerwallPercentage = (currentPowerwallKwh / BATTERY_CAPACITIES.POWERWALL) * 100;
-
-        // Vehicle charging predictions (unchanged)
-        if (latest.Model3IsCharging && latest.Model3ChargerPowerKw > 0) {
-            const percentageGainIn15Min = (latest.Model3ChargerPowerKw * 0.25 / BATTERY_CAPACITIES.MODEL_3) * 100;
-            currentModel3Level = Math.min(100, currentModel3Level + percentageGainIn15Min);
-        }
-
-        if (latest.ModelXIsCharging && latest.ModelXChargerPowerKw > 0) {
-            const percentageGainIn15Min = (latest.ModelXChargerPowerKw * 0.25 / BATTERY_CAPACITIES.MODEL_X) * 100;
-            currentModelXLevel = Math.min(100, currentModelXLevel + percentageGainIn15Min);
-        }
 
         predictions.powerwall.push(powerwallPercentage);
         predictions.model3.push(latest.Model3IsAvailable ? currentModel3Level : null);
         predictions.modelX.push(latest.ModelXIsAvailable ? currentModelXLevel : null);
 
+        // Move to next 15-minute interval
         currentTime.setMinutes(currentTime.getMinutes() + 15);
     }
 

@@ -1,0 +1,425 @@
+/* Battery Simulator Styles - Compact Version */
+
+.battery-simulator-container {
+    background: linear-gradient(145deg, #1a1a1a, #2d2d2d);
+    border-radius: 8px;
+    padding: 10px;
+    margin: 10px 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+}
+
+.simulator-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+    .simulator-header h4 {
+        margin: 0;
+        color: #4a9eff;
+        font-size: 1rem;
+        font-weight: 600;
+    }
+
+.simulator-toggle-btn {
+    background: linear-gradient(145deg, #4a4a4a, #2a2a2a);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
+    color: #ffffff;
+    cursor: pointer;
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+}
+
+    .simulator-toggle-btn:hover {
+        transform: translateY(-1px);
+        background: linear-gradient(145deg, #5a5a5a, #3a3a3a);
+        border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    .simulator-toggle-btn.active {
+        background: linear-gradient(145deg, #4a9eff, #3a8aef);
+        border-color: #4a9eff;
+        box-shadow: 0 2px 8px rgba(74, 158, 255, 0.3);
+    }
+
+        .simulator-toggle-btn.active:hover {
+            background: linear-gradient(145deg, #3a8aef, #2a7adf);
+        }
+
+.simulator-controls {
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.vehicle-controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.vehicle-control-group {
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 6px;
+    padding: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.vehicle-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+.vehicle-icon {
+    font-size: 1rem;
+}
+
+.vehicle-name {
+    font-size: 0.9rem;
+}
+
+.charging-control {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.charging-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: #cccccc;
+}
+
+    .charging-checkbox input[type="checkbox"] {
+        display: none;
+    }
+
+.checkmark {
+    width: 16px;
+    height: 16px;
+    background: #333;
+    border: 2px solid #555;
+    border-radius: 3px;
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+    .checkmark::after {
+        content: '';
+        position: absolute;
+        display: none;
+        left: 4px;
+        top: 0px;
+        width: 3px;
+        height: 7px;
+        border: solid #4a9eff;
+        border-width: 0 2px 2px 0;
+        transform: rotate(45deg);
+    }
+
+.charging-checkbox input[type="checkbox"]:checked + .checkmark {
+    background: #4a9eff;
+    border-color: #4a9eff;
+}
+
+    .charging-checkbox input[type="checkbox"]:checked + .checkmark::after {
+        display: block;
+    }
+
+.amps-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+    .amps-control label {
+        color: #cccccc;
+        font-size: 0.8rem;
+        min-width: 40px;
+    }
+
+    .amps-control input[type="range"] {
+        flex: 1;
+        min-width: 100px;
+        height: 5px;
+        border-radius: 3px;
+        background: #333;
+        outline: none;
+        transition: all 0.3s ease;
+    }
+
+        .amps-control input[type="range"]:enabled {
+            background: linear-gradient(to right, #4a9eff 0%, #4a9eff var(--value), #333 var(--value), #333 100%);
+        }
+
+        .amps-control input[type="range"]:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .amps-control input[type="range"]::-webkit-slider-thumb {
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #4a9eff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .amps-control input[type="range"]:enabled::-webkit-slider-thumb:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 8px rgba(74, 158, 255, 0.5);
+        }
+
+        .amps-control input[type="range"]::-moz-range-thumb {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #4a9eff;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .amps-control input[type="range"]:enabled::-moz-range-thumb:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 8px rgba(74, 158, 255, 0.5);
+        }
+
+.amps-value {
+    color: #4a9eff;
+    font-weight: 600;
+    font-size: 0.8rem;
+    min-width: 30px;
+    text-align: center;
+}
+
+.power-value {
+    color: #00cc00;
+    font-weight: 600;
+    font-size: 0.8rem;
+    min-width: 40px;
+    text-align: center;
+}
+
+.simulation-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.simulator-btn {
+    flex: 1;
+    padding: 6px 10px;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+}
+
+.simulator-btn-primary {
+    background: linear-gradient(145deg, #4a9eff, #3a8aef);
+    color: white;
+    box-shadow: 0 2px 8px rgba(74, 158, 255, 0.3);
+}
+
+    .simulator-btn-primary:hover {
+        transform: translateY(-1px);
+        background: linear-gradient(145deg, #3a8aef, #2a7adf);
+        box-shadow: 0 3px 12px rgba(74, 158, 255, 0.4);
+    }
+
+.simulator-btn-secondary {
+    background: linear-gradient(145deg, #6a6a6a, #4a4a4a);
+    color: white;
+    box-shadow: 0 2px 8px rgba(106, 106, 106, 0.3);
+}
+
+    .simulator-btn-secondary:hover {
+        transform: translateY(-1px);
+        background: linear-gradient(145deg, #5a5a5a, #3a3a3a);
+        box-shadow: 0 3px 12px rgba(106, 106, 106, 0.4);
+    }
+
+.simulator-btn:active {
+    transform: translateY(0);
+}
+
+.simulation-info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 8px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.info-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.info-label {
+    font-size: 0.7rem;
+    color: #888;
+    font-weight: 500;
+}
+
+.info-value {
+    font-size: 0.9rem;
+    color: #ffffff;
+    font-weight: 600;
+}
+
+.simulator-feedback {
+    padding: 6px 8px;
+    border-radius: 4px;
+    margin-top: 6px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    text-align: center;
+    display: none;
+    animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.simulator-feedback-success {
+    background: rgba(76, 175, 80, 0.2);
+    color: #4caf50;
+    border: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+.simulator-feedback-info {
+    background: rgba(74, 158, 255, 0.2);
+    color: #4a9eff;
+    border: 1px solid rgba(74, 158, 255, 0.3);
+}
+
+.simulator-feedback-error {
+    background: rgba(255, 68, 68, 0.2);
+    color: #ff4444;
+    border: 1px solid rgba(255, 68, 68, 0.3);
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .battery-simulator-container {
+        padding: 8px;
+    }
+
+    .simulator-header {
+        flex-direction: column;
+        gap: 6px;
+        align-items: stretch;
+    }
+
+        .simulator-header h4 {
+            text-align: center;
+        }
+
+    .vehicle-controls {
+        grid-template-columns: 1fr;
+    }
+
+    .amps-control {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+    }
+
+        .amps-control input[type="range"] {
+            min-width: auto;
+        }
+
+    .simulation-actions {
+        flex-direction: column;
+    }
+
+    .simulation-info {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+    .battery-simulator-container {
+        border: 2px solid #fff;
+        background: #000;
+    }
+
+    .vehicle-control-group {
+        border: 1px solid #fff;
+        background: #333;
+    }
+
+    .checkmark {
+        border-color: #fff;
+        background: #000;
+    }
+
+    .amps-control input[type="range"] {
+        background: #666;
+    }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    .simulator-controls,
+    .simulator-feedback {
+        animation: none;
+    }
+
+    .simulator-btn:hover,
+    .simulator-toggle-btn:hover {
+        transform: none;
+    }
+
+    .amps-control input[type="range"]::-webkit-slider-thumb:hover,
+    .amps-control input[type="range"]::-moz-range-thumb:hover {
+        transform: none;
+        box-shadow: none;
+    }
+}

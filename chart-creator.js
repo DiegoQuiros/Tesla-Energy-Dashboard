@@ -570,6 +570,9 @@ function createBatteryChart(todayData) {
     const predictions = generateBatteryPredictions(todayData);
     const actualDataCount = todayData.length;
 
+    // Check if simulation is active
+    const isSimulationActive = window.batterySimulator && window.batterySimulator.isSimulationActive();
+
     const datasets = [
         // Yesterday's Powerwall data (darker shade)
         {
@@ -626,29 +629,38 @@ function createBatteryChart(todayData) {
 
     // Add Model 3 dataset if we have data
     if (model3Result.lastKnownLevel !== null) {
+        const model3Label = isSimulationActive ? 'Model 3 (Simulated)' : 'Model 3';
+        const model3BorderColor = isSimulationActive ? '#ff8888' : '#ff4444';
+        const model3BackgroundColor = isSimulationActive ? 'rgba(255, 136, 136, 0.2)' : 'rgba(255, 68, 68, 0.1)';
+        const model3BorderWidth = isSimulationActive ? 3 : 2;
+
         datasets.push({
-            label: 'Model 3',
+            label: model3Label,
             data: model3Result.data,
-            borderColor: '#ff4444',
-            backgroundColor: 'rgba(255, 68, 68, 0.1)',
+            borderColor: model3BorderColor,
+            backgroundColor: model3BackgroundColor,
             tension: 0.4,
-            borderWidth: 2,
+            borderWidth: model3BorderWidth,
             spanGaps: true, // This will connect across null values
             pointStyle: 'circle',
-            pointRadius: 3
+            pointRadius: 3,
+            borderDash: isSimulationActive ? [5, 5] : []
         });
 
-        // Add Model 3 predictions if available (no legend)
+        // Add Model 3 predictions if available
         if (predictions.model3.some(val => val !== null)) {
+            const predictionColor = isSimulationActive ? '#ff8888' : '#ff4444';
+            const predictionBgColor = isSimulationActive ? 'rgba(255, 136, 136, 0.4)' : 'rgba(255, 68, 68, 0.3)';
+
             datasets.push({
                 label: '',
                 data: Array(actualDataCount).fill(null).concat(predictions.model3),
                 borderColor: 'transparent',
-                backgroundColor: 'rgba(255, 68, 68, 0.3)',
-                pointStyle: 'circle',
-                pointRadius: 2,
-                pointBorderColor: '#ff4444',
-                pointBackgroundColor: 'rgba(255, 68, 68, 0.6)',
+                backgroundColor: predictionBgColor,
+                pointStyle: isSimulationActive ? 'rectRot' : 'circle',
+                pointRadius: isSimulationActive ? 4 : 2,
+                pointBorderColor: predictionColor,
+                pointBackgroundColor: predictionBgColor,
                 showLine: false
             });
         }
@@ -671,29 +683,38 @@ function createBatteryChart(todayData) {
 
     // Add Model X dataset if we have data
     if (modelXResult.lastKnownLevel !== null) {
+        const modelXLabel = isSimulationActive ? 'Model X (Simulated)' : 'Model X';
+        const modelXBorderColor = isSimulationActive ? '#7799ff' : '#4477ff';
+        const modelXBackgroundColor = isSimulationActive ? 'rgba(119, 153, 255, 0.2)' : 'rgba(68, 119, 255, 0.1)';
+        const modelXBorderWidth = isSimulationActive ? 3 : 2;
+
         datasets.push({
-            label: 'Model X',
+            label: modelXLabel,
             data: modelXResult.data,
-            borderColor: '#4477ff',
-            backgroundColor: 'rgba(68, 119, 255, 0.1)',
+            borderColor: modelXBorderColor,
+            backgroundColor: modelXBackgroundColor,
             tension: 0.4,
-            borderWidth: 2,
-            spanGaps: true, // This will connect across null values
+            borderWidth: modelXBorderWidth,
+            spanGaps: true,
             pointStyle: 'circle',
-            pointRadius: 3
+            pointRadius: 3,
+            borderDash: isSimulationActive ? [5, 5] : []
         });
 
-        // Add Model X predictions if available (no legend)
+        // Add Model X predictions if available
         if (predictions.modelX.some(val => val !== null)) {
+            const predictionColor = isSimulationActive ? '#7799ff' : '#4477ff';
+            const predictionBgColor = isSimulationActive ? 'rgba(119, 153, 255, 0.4)' : 'rgba(68, 119, 255, 0.3)';
+
             datasets.push({
                 label: '',
                 data: Array(actualDataCount).fill(null).concat(predictions.modelX),
                 borderColor: 'transparent',
-                backgroundColor: 'rgba(68, 119, 255, 0.3)',
-                pointStyle: 'circle',
-                pointRadius: 2,
-                pointBorderColor: '#4477ff',
-                pointBackgroundColor: 'rgba(68, 119, 255, 0.6)',
+                backgroundColor: predictionBgColor,
+                pointStyle: isSimulationActive ? 'rectRot' : 'circle',
+                pointRadius: isSimulationActive ? 4 : 2,
+                pointBorderColor: predictionColor,
+                pointBackgroundColor: predictionBgColor,
                 showLine: false
             });
         }
