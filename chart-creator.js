@@ -74,7 +74,7 @@ function createTemperatureChart(todayData) {
     });
 
     const indoorTemps = filteredData.map(point =>
-        (point.ThermostatCurrentTempF && point.ThermostatCurrentTempF > 0) ? point.ThermostatCurrentTempF : null
+        (point.ThermostatCurrentTempF && point.ThermostatCurrentTempF > 32) ? point.ThermostatCurrentTempF : null
     );
 
     const outdoorTemps = filteredData.map(point =>
@@ -83,7 +83,7 @@ function createTemperatureChart(todayData) {
 
     // Yesterday's temperature data
     const indoorTempsYesterday = filteredYesterdayData.map(point =>
-        (point.ThermostatCurrentTempF && point.ThermostatCurrentTempF > 0) ? point.ThermostatCurrentTempF : null
+        (point.ThermostatCurrentTempF && point.ThermostatCurrentTempF > 32) ? point.ThermostatCurrentTempF : null
     );
 
     const outdoorTempsYesterday = filteredYesterdayData.map(point =>

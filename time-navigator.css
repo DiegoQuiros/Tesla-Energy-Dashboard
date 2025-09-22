@@ -258,3 +258,44 @@
         transform: none;
     }
 }
+
+.calendar-picker-container {
+    margin-top: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.calendar-label {
+    color: #ffffff;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.calendar-date-input {
+    background: linear-gradient(145deg, #2a2a2a, #3a3a3a);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    color: #ffffff;
+    padding: 8px 12px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+    .calendar-date-input:hover {
+        border-color: rgba(255, 255, 255, 0.4);
+        background: linear-gradient(145deg, #3a3a3a, #4a4a4a);
+    }
+
+    .calendar-date-input:focus {
+        outline: 2px solid #4a9eff;
+        outline-offset: 2px;
+        border-color: #4a9eff;
+    }
+
+    .calendar-date-input::-webkit-calendar-picker-indicator {
+        filter: invert(1);
+        cursor: pointer;
+    }

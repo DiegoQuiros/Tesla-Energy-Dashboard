@@ -40,6 +40,10 @@ class TimeNavigator {
                     <span>🔴 LIVE</span>
                 </button>
             </div>
+            <div class="calendar-picker-container">
+                <label for="datePickerInput" class="calendar-label">Jump to date:</label>
+                <input type="date" id="datePickerInput" class="calendar-date-input" title="Select a date before today">
+            </div>
         `;
 
         // Insert after the header
@@ -57,6 +61,12 @@ class TimeNavigator {
         document.getElementById('timeNavForward').addEventListener('click', () => this.stepTime(this.timeStep));
         document.getElementById('timeNavForwardFast').addEventListener('click', () => this.stepTime(60));
         document.getElementById('timeNavLive').addEventListener('click', () => this.goToLiveMode());
+
+        // Date picker event
+        document.getElementById('datePickerInput').addEventListener('change', (e) => this.jumpToDate(e.target.value));
+
+        // Set max date to yesterday
+        this.updateDatePickerConstraints();
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
@@ -115,6 +125,54 @@ class TimeNavigator {
         this.isLiveMode = true;
         this.updateDisplay();
         this.notifyObservers();
+    }
+
+    jumpToDate(dateString) {
+        if (!dateString) return;
+
+        const selectedDate = new Date(dateString + 'T23:59:59');
+        const earliestTime = this.getEarliestDataTime();
+        const latestTime = this.getLatestDataTime();
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Don't allow future dates
+        if (selectedDate >= today) {
+            alert('Please select a date before today.');
+            document.getElementById('datePickerInput').value = '';
+            return;
+        }
+
+        // Don't allow dates before data availability
+        if (selectedDate < earliestTime) {
+            alert('No data available for this date.');
+            document.getElementById('datePickerInput').value = '';
+            return;
+        }
+
+        // Jump to end of selected day (or latest data if selected day is partial)
+        const endOfDay = new Date(selectedDate);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        this.selectedTime = endOfDay > latestTime ? latestTime : endOfDay;
+        this.isLiveMode = false;
+        this.updateDisplay();
+        this.notifyObservers();
+    }
+
+    updateDatePickerConstraints() {
+        const dateInput = document.getElementById('datePickerInput');
+        if (!dateInput) return;
+
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const maxDate = yesterday.toISOString().split('T')[0];
+
+        const earliestTime = this.getEarliestDataTime();
+        const minDate = earliestTime.toISOString().split('T')[0];
+
+        dateInput.max = maxDate;
+        dateInput.min = minDate;
     }
 
     updateDisplay() {
