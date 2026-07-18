@@ -7,7 +7,6 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="indexStyleSheet.css">
     <link rel="stylesheet" href="vehicle.css">
-    <link rel="stylesheet" href="temperature-alerts.css">
     <link rel="stylesheet" href="battery-simulator.css">
     <link rel="stylesheet" href="time-navigator.css">
     <link rel="stylesheet" href="chart-collapse.css">
@@ -72,7 +71,7 @@
                                 </td>
                                 <td style="width: 130px;">
                                     <div id="model3Card" class="flow-energy-node2 flow-grid-node2">
-                                        <div class="flow-energy-value" id="flowGridValue"><span id="model3ChargingRate">-- kW</span></div>
+                                        <div class="flow-energy-value" id="flowGridValue"><span id="model3ChargingRate" style="white-space: nowrap;">-- kW</span></div>
                                         <div style="font-size: 1rem; opacity: 0.8; color: #e91e63; font-weight: bold;">Model 3</div>
                                     </div>
                                 </td>
@@ -106,7 +105,7 @@
                                 </td>
                                 <td style="width: 130px;">
                                     <div id="modelXCard" class="flow-energy-node2 flow-grid-node2">
-                                        <div class="flow-energy-value" id="flowGridValue"><span id="modelXChargingRate">-- kW</span></div>
+                                        <div class="flow-energy-value" id="flowGridValue"><span id="modelXChargingRate" style="white-space: nowrap;">-- kW</span></div>
                                         <div style="font-size: 1rem; opacity: 0.8; color: #2196f3; font-weight: bold;">Model X</div>
                                     </div>
                                 </td>
@@ -121,9 +120,6 @@
                         <div class="power-lines"></div>
                     </div>
 
-                    <!-- Powerwall unit at bottom center -->
-                    <div class="powerwall-unit"></div>
-
                     <!-- Energy nodes -->
                     <!-- Home consumption inside house -->
                     <div class="flow-energy-node flow-home-node">
@@ -131,79 +127,40 @@
                         <div class="flow-energy-label">HOME</div>
                     </div>
 
-                    <!-- Powerwall below the unit -->
-                    <div class="flow-energy-node flow-powerwall-node">
-                        <div class="flow-energy-value" id="flowPowerwallValue">0.2 kW • 82%</div>
-                        <div class="flow-energy-label">POWERWALL</div>
+                    <!-- Powerwall card + node at bottom center -->
+                    <div class="powerwall-container">
+                        <table style="width: 460px;">
+                            <tr>
+                                <td style="width: 310px;">
+                                    <div class="card" style="width: 300px; padding: 15px;">
+                                        <div class="battery-level">
+                                            <div class="battery-info">
+                                                <span id="powerwallPercent">--%</span>
+                                                <span id="powerwallKwh" class="kwh-display">-- kWh</span>
+                                            </div>
+                                            <div class="battery-bar-container">
+                                                <div class="battery-bar gradient-bar">
+                                                    <div class="battery-fill" id="powerwallBar" style="width: 0%"></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="stale-info" id="powerwallStaleInfo" style="display: none;"></div>
+                                    </div>
+                                </td>
+                                <td style="width: 150px;">
+                                    <div class="flow-energy-node2 flow-grid-node2">
+                                        <div class="flow-energy-value" id="flowPowerwallValue" style="white-space: nowrap;">-- kW</div>
+                                        <div style="font-size: 1rem; opacity: 0.8; color: #00cc00; font-weight: bold;">Powerwall</div>
+                                    </div>
+                                </td>
+                            </tr>
+                        </table>
                     </div>
 
                     <!-- Grid next to electrical tower -->
                     <div class="flow-energy-node flow-grid-node" style="right: 160px !important;">
                         <div class="flow-energy-value" id="flowGridValue">0 kW</div>
                         <div class="flow-energy-label" id="flowGridLabel">GRID</div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="status-cards">
-                <!-- Weather Card -->
-                <div class="card weather-card">
-                    <h3>🌤️ Weather</h3>
-                    <div class="weather-temp" id="weatherTemp">--°F</div>
-                    <div class="weather-condition" id="weatherCondition">--</div>
-                    <div style="margin-top: 15px; font-size: 0.9rem; color: #b0c4de;">
-                        <div>Humidity: <span id="weatherHumidity">--%</span></div>
-                        <div>Solar Impact: <span id="weatherSolarImpact">--</span></div>
-                    </div>
-                </div>
-
-                <!-- Nest Thermostat Card -->
-                <div class="card thermostat-card">
-                    <h3>🏠 Thermostat</h3>
-                    <div class="thermostat-display">
-                        <div class="thermostat-ring">
-                            <div class="thermostat-temp" id="thermostatTemp">--</div>
-                            <div class="thermostat-mode" id="thermostatModeDisplay">--</div>
-                            <div class="eco-leaf" id="ecoLeaf">🍃</div>
-                        </div>
-                        <div class="thermostat-target" id="thermostatTarget">Target: --°F</div>
-                    </div>
-                    <div class="thermostat-info">
-                        <div>Mode: <span id="thermostatMode">--</span></div>
-                        <div>Status: <span id="thermostatStatus">--</span></div>
-                        <div>Humidity: <span id="thermostatHumidity">--%</span></div>
-                        <div class="stale-info" id="thermostatStaleInfo" style="display: none;"></div>
-                    </div>
-                </div>
-
-                <!-- Powerwall Card -->
-                <div class="card">
-                    <h3>🔋 Powerwall</h3>
-                    <div class="battery-level">
-                        <div class="battery-info">
-                            <span id="powerwallPercent">--%</span>
-                            <span id="powerwallKwh" class="kwh-display">-- kWh</span>
-                        </div>
-                        <div class="battery-bar-container">
-                            <div class="battery-bar gradient-bar">
-                                <div class="battery-fill" id="powerwallBar" style="width: 0%"></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="stale-info" id="powerwallStaleInfo" style="display: none;"></div>
-                    <div class="power-flow">
-                        <div class="power-item">
-                            <div class="power-value solar-positive" id="solarPower">-- kW</div>
-                            <div class="power-label">Solar</div>
-                        </div>
-                        <div class="power-item">
-                            <div class="power-value" id="batteryPower">-- kW</div>
-                            <div class="power-label">Battery</div>
-                        </div>
-                        <div class="power-item">
-                            <div class="power-value" id="gridPower">-- kW</div>
-                            <div class="power-label">Grid</div>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -223,6 +180,20 @@
                     </div>
                 </div>
 
+                <!-- Solar Production Chart -->
+                <div class="chart-container" id="solarChartContainer">
+                    <h3>
+                        ☀️ Today's Solar Production
+                        <div class="chart-buttons">
+                            <button class="collapse-btn" id="solarCollapseBtn" title="Collapse chart">Collapse</button>
+                            <button class="maximize-btn" id="solarMaximizeBtn">Maximize</button>
+                        </div>
+                    </h3>
+                    <div class="chart-wrapper">
+                        <canvas id="solarChart"></canvas>
+                    </div>
+                </div>
+
                 <!-- Temperature Comparison Chart -->
                 <div class="chart-container" id="temperatureChartContainer">
                     <h3>
@@ -237,17 +208,34 @@
                     </div>
                 </div>
 
-                <!-- Solar Production Chart -->
-                <div class="chart-container" id="solarChartContainer">
+                <!-- Weather Section -->
+                <div class="chart-container weather-card" id="weatherSection">
+                    <h3>🌤️ Weather</h3>
+                    <div class="weather-current">
+                        <div class="weather-temp" id="weatherTemp">--°F</div>
+                        <div>
+                            <div class="weather-condition" id="weatherCondition">--</div>
+                            <div style="font-size: 0.9rem; color: #b0c4de;">
+                                Humidity: <span id="weatherHumidity">--%</span> &nbsp;•&nbsp; Solar Impact: <span id="weatherSolarImpact">--</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="forecast-grid" id="weatherForecast">
+                        <div style="color: #b0c4de;">Loading 7-day forecast…</div>
+                    </div>
+                </div>
+
+                <!-- Daily Solar Production Chart -->
+                <div class="chart-container" id="dailySolarChartContainer">
                     <h3>
-                        ☀️ Today's Solar Production
+                        📊 Daily Solar Production (Last 12 Months)
                         <div class="chart-buttons">
-                            <button class="collapse-btn" id="solarCollapseBtn" title="Collapse chart">Collapse</button>
-                            <button class="maximize-btn" id="solarMaximizeBtn">Maximize</button>
+                            <button class="collapse-btn" id="dailySolarCollapseBtn" title="Collapse chart">Collapse</button>
+                            <button class="maximize-btn" id="dailySolarMaximizeBtn">Maximize</button>
                         </div>
                     </h3>
                     <div class="chart-wrapper">
-                        <canvas id="solarChart"></canvas>
+                        <canvas id="dailySolarChart"></canvas>
                     </div>
                 </div>
             </div>
@@ -256,11 +244,11 @@
 
     <script src="config.js"></script>
     <script src="utils.js"></script>
-    <script src="temperature-alerts.js"></script>
     <script src="time-navigator.js"></script>
     <script src="dashboard-updater.js"></script>
     <script src="chart-creator.js"></script>
     <script src="energy-flow-charts.js"></script>
+    <script src="weather-forecast.js"></script>
     <script src="prediction-generator.js"></script>
     <script src="battery-simulator.js"></script>
     <script src="chart-maximizer.js"></script>

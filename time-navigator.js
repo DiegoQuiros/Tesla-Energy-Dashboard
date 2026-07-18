@@ -246,6 +246,17 @@ class TimeNavigator {
         return this.isLiveMode ? new Date() : this.selectedTime;
     }
 
+    // Binary search: first index in sorted data whose timestamp is after `time`
+    static upperBound(data, time) {
+        let lo = 0, hi = data.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (convertToPDT(data[mid].LocalTimestamp) <= time) lo = mid + 1;
+            else hi = mid;
+        }
+        return lo;
+    }
+
     // Get filtered data up to the selected time
     getFilteredData() {
         if (!energyData || energyData.length === 0) return [];
@@ -254,11 +265,17 @@ class TimeNavigator {
             return energyData; // Return all data in live mode
         }
 
-        // Filter data up to selected time
-        return energyData.filter(point => {
-            const pointTime = convertToPDT(point.LocalTimestamp);
-            return pointTime <= this.selectedTime;
-        });
+        // Cached: multiple components request the same slice on every time step
+        const key = this.selectedTime.getTime();
+        if (this._filteredCache && this._filteredCache.key === key && this._filteredCache.source === energyData) {
+            return this._filteredCache.data;
+        }
+
+        // Data is sorted by timestamp, so binary search + slice instead of a full scan
+        const end = TimeNavigator.upperBound(energyData, this.selectedTime);
+        const data = energyData.slice(0, end);
+        this._filteredCache = { key, source: energyData, data };
+        return data;
     }
 
     // Get the latest data point for the selected time
@@ -296,10 +313,10 @@ class TimeNavigator {
 
         const filteredData = this.getFilteredData();
 
-        return filteredData.filter(point => {
-            const pointDate = convertToPDT(point.LocalTimestamp);
-            return pointDate >= startOfDay && pointDate <= currentTime;
-        });
+        // filteredData is sorted and already capped at currentTime, so just find the day start
+        const startIdx = TimeNavigator.upperBound(filteredData, new Date(startOfDay.getTime() - 1));
+        const endIdx = TimeNavigator.upperBound(filteredData, currentTime);
+        return filteredData.slice(startIdx, endIdx);
     }
 
     // Check if we're currently in live mode

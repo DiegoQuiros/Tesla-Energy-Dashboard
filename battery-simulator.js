@@ -16,7 +16,7 @@ class BatterySimulator {
                 batteryCapacity: BATTERY_CAPACITIES.MODEL_3
             },
             ModelX: {
-                minAmps: 7,
+                minAmps: 5,
                 maxAmps: 48, // Model X typically supports higher amperage
                 voltage: 249,
                 batteryCapacity: BATTERY_CAPACITIES.MODEL_X

@@ -23,6 +23,12 @@ class ChartCollapser {
         if (batteryBtn) {
             batteryBtn.addEventListener('click', () => this.toggleCollapse('batteryChartContainer'));
         }
+
+        // Daily Solar Chart
+        const dailySolarBtn = document.getElementById('dailySolarCollapseBtn');
+        if (dailySolarBtn) {
+            dailySolarBtn.addEventListener('click', () => this.toggleCollapse('dailySolarChartContainer'));
+        }
     }
 
     toggleCollapse(containerId) {

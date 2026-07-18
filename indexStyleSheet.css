@@ -117,68 +117,59 @@ body {
     /* This creates the effect by covering the unused portion */
 }
 
-/* Thermostat Card Styling */
-.thermostat-card {
+.weather-card {
     background: linear-gradient(145deg, #2a3d66, #1a2744);
 }
 
-.thermostat-display {
-    text-align: center;
+.weather-current {
+    display: flex;
+    align-items: center;
+    gap: 25px;
     margin-bottom: 20px;
 }
 
-.thermostat-ring {
-    width: 120px;
-    height: 120px;
-    border-radius: 50%;
-    border: 3px solid #4a9eff;
-    margin: 0 auto 10px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    position: relative;
-    background: rgba(74, 158, 255, 0.1);
+.forecast-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 15px;
 }
 
-.thermostat-temp {
-    font-size: 2.5rem;
+.forecast-day {
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    padding: 12px 8px;
+    text-align: center;
+}
+
+.forecast-day-name {
     font-weight: bold;
-    color: #4a9eff;
-    line-height: 1;
-}
-
-.thermostat-mode {
-    font-size: 0.8rem;
     color: #87ceeb;
-    margin-top: 2px;
+    margin-bottom: 6px;
 }
 
-.eco-leaf {
-    position: absolute;
-    bottom: 15px;
-    right: 15px;
-    font-size: 1.2rem;
-    opacity: 0.7;
+.forecast-icon {
+    font-size: 2rem;
 }
 
-.thermostat-target {
-    font-size: 1rem;
+.forecast-temps {
+    margin: 6px 0;
+    font-weight: bold;
+}
+
+.forecast-low {
+    color: #8fa3c0;
+    margin-left: 6px;
+}
+
+.forecast-desc {
+    font-size: 0.75rem;
     color: #b0c4de;
-    margin-bottom: 15px;
 }
 
-.thermostat-info {
-    font-size: 0.9rem;
-    color: #ccc;
-}
-
-    .thermostat-info div {
-        margin-bottom: 5px;
+@media (max-width: 768px) {
+    .forecast-grid {
+        grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
     }
-
-.weather-card {
-    background: linear-gradient(145deg, #2a3d66, #1a2744);
 }
 
 .weather-temp {
@@ -604,43 +595,14 @@ body {
     background: repeating-linear-gradient( 90deg, transparent 0px, transparent 8px, #888 8px, #888 10px );
 }
 
-/* Powerwall at bottom center */
-.powerwall-unit {
+/* Powerwall card + node at bottom center */
+.powerwall-container {
     position: absolute;
-    bottom: 30px;
+    bottom: 20px;
     left: 50%;
     transform: translateX(-50%);
-    width: 40px;
-    height: 60px;
-    background: linear-gradient(180deg, #4caf50 0%, #2e7d32 100%);
-    border-radius: 8px;
-    border: 2px solid #66bb6a;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+    z-index: 10;
 }
-
-    .powerwall-unit::before {
-        content: '';
-        position: absolute;
-        top: 8px;
-        width: 30px;
-        height: 4px;
-        background: rgba(255,255,255,0.3);
-        border-radius: 2px;
-    }
-
-    .powerwall-unit::after {
-        content: '';
-        position: absolute;
-        bottom: 8px;
-        width: 30px;
-        height: 4px;
-        background: rgba(255,255,255,0.3);
-        border-radius: 2px;
-    }
 
 .flow-energy-node {
     position: absolute;
@@ -672,14 +634,6 @@ body {
     border-color: #9f7aea;
     background: rgba(159, 122, 234, 0.15);
     font-size: 0.8rem;
-}
-
-.flow-powerwall-node {
-    bottom: 100px;
-    left: 50%;
-    transform: translateX(-50%);
-    border-color: #00cc00;
-    background: rgba(0, 204, 0, 0.15);
 }
 
 .flow-grid-node {

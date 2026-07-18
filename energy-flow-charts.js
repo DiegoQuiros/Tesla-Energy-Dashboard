@@ -67,45 +67,13 @@ function updateEnergyFlowHouse(latest) {
     document.getElementById('flowPowerwallValue').textContent =
         `${Math.abs(batteryPower).toFixed(1)} kW • ${(latest.BatteryPercentage || 0).toFixed(0)}%`;
 
-    // Update Powerwall unit color based on charging/discharging
-    const powerwallUnit = document.querySelector('.powerwall-unit');
-    const powerwallNode = document.querySelector('.flow-powerwall-node');
-
-    if (batteryPower < 0) {
-        // Charging
-        powerwallUnit.style.background = 'linear-gradient(180deg, #4caf50 0%, #2e7d32 100%)';
-        powerwallUnit.style.borderColor = '#66bb6a';
-        powerwallUnit.style.boxShadow = '0 4px 12px rgba(76, 175, 80, 0.6)';
-        powerwallNode.style.borderColor = '#00cc00';
-        powerwallNode.style.background = 'rgba(0, 204, 0, 0.15)';
-    } else if (batteryPower > 0) {
-        // Discharging
-        powerwallUnit.style.background = 'linear-gradient(180deg, #ff9800 0%, #f57c00 100%)';
-        powerwallUnit.style.borderColor = '#ffb74d';
-        powerwallUnit.style.boxShadow = '0 4px 12px rgba(255, 152, 0, 0.6)';
-        powerwallNode.style.borderColor = '#ff9800';
-        powerwallNode.style.background = 'rgba(255, 152, 0, 0.15)';
-    } else {
-        // Idle
-        powerwallUnit.style.background = 'linear-gradient(180deg, #4caf50 0%, #2e7d32 100%)';
-        powerwallUnit.style.borderColor = '#66bb6a';
-        powerwallUnit.style.boxShadow = '0 4px 12px rgba(76, 175, 80, 0.4)';
-        powerwallNode.style.borderColor = '#00cc00';
-        powerwallNode.style.background = 'rgba(0, 204, 0, 0.15)';
-    }
-
     // Calculate home consumption
     const model3ChargingPower = (latest.Model3IsCharging && latest.Model3ChargerPowerKw) ? latest.Model3ChargerPowerKw : 0;
     const modelXChargingPower = (latest.ModelXIsCharging && latest.ModelXChargerPowerKw) ? latest.ModelXChargerPowerKw : 0;
     const totalVehicleCharging = model3ChargingPower + modelXChargingPower;
 
-    let thermostatPower = 0;
-    if (latest.ThermostatIsOnline && latest.ThermostatStatus && latest.ThermostatStatus !== 'OFF') {
-        thermostatPower = latest.ThermostatIsActivelyRunning ? 5.6 : 0.9;
-    }
-
     const loadPower = latest.LoadPowerKw || 0;
-    const housePower = Math.max(0, loadPower - totalVehicleCharging - thermostatPower);
+    const housePower = Math.max(0, loadPower - totalVehicleCharging);
 
     document.getElementById('flowHomeValue').textContent = `${housePower.toFixed(1)} kW`;
 

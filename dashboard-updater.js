@@ -1,20 +1,57 @@
+// Fetch the energy data blob, retrying on transient failures
+// (e.g. empty/partial JSON when the fetch races the collector's upload)
+async function fetchEnergyData(attempts = 3, retryDelayMs = 5000) {
+    let lastError;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+        try {
+            // Add cache busting parameter to avoid browser cache issues
+            const url = `${AZURE_BLOB_URL}?t=${Date.now()}`;
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+
+            if (!Array.isArray(data)) {
+                throw new Error('Data is not in expected array format');
+            }
+
+            return data;
+        } catch (error) {
+            lastError = error;
+            console.warn(`Energy data fetch attempt ${attempt}/${attempts} failed:`, error.message);
+            if (attempt < attempts) {
+                await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+            }
+        }
+    }
+    throw lastError;
+}
+
+// Fetch the daily summary blob. Never throws: the dashboard must still work
+// (falling back to the raw data window) if the summary is missing.
+async function fetchDailySummary() {
+    try {
+        const response = await fetch(`${DAILY_SUMMARY_URL}?t=${Date.now()}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        const data = await response.json();
+        return Array.isArray(data) ? data : [];
+    } catch (error) {
+        console.warn('Daily summary unavailable (chart falls back to raw window):', error.message);
+        return [];
+    }
+}
+
 async function loadEnergyData() {
     try {
         console.log('Loading energy data from:', AZURE_BLOB_URL);
 
-        // Add cache busting parameter to avoid browser cache issues
-        const url = `${AZURE_BLOB_URL}?t=${Date.now()}`;
-        const response = await fetch(url);
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-
-        if (!Array.isArray(data)) {
-            throw new Error('Data is not in expected array format');
-        }
+        const [data, summary] = await Promise.all([fetchEnergyData(), fetchDailySummary()]);
+        dailySummaryData = summary;
 
         energyData = data.sort((a, b) => convertToPDT(a.LocalTimestamp) - convertToPDT(b.LocalTimestamp));
 
@@ -29,6 +66,9 @@ async function loadEnergyData() {
 
         scheduleSmartRefresh();
 
+        // Clear any error banner left over from a previous failed refresh
+        document.getElementById('error').style.display = 'none';
+
         updateDashboard();
 
         if (typeof Chart !== 'undefined') {
@@ -42,14 +82,21 @@ async function loadEnergyData() {
             }, 1000);
         }
 
-        return Promise.resolve(); // Ensure this returns a resolved promise
+        return true;
 
     } catch (error) {
         console.error('Error loading energy data:', error);
         document.getElementById('loading').style.display = 'none';
-        document.getElementById('error').style.display = 'block';
-        document.getElementById('errorMessage').textContent = error.message;
-        return Promise.reject(error);
+
+        if (energyData.length > 0) {
+            // We still have data from a previous load - keep showing it
+            // and let the next scheduled refresh try again
+            console.warn('Refresh failed, keeping previously loaded data');
+        } else {
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('errorMessage').textContent = error.message;
+        }
+        return false;
     }
 }
 
@@ -90,9 +137,6 @@ function updateDashboard() {
     document.getElementById('weatherHumidity').textContent = `${latest.WeatherHumidity || '--'}%`;
     document.getElementById('weatherSolarImpact').textContent = latest.WeatherSolarImpact ? `${(latest.WeatherSolarImpact * 100).toFixed(0)}%` : '--';
 
-    // Update Thermostat
-    updateThermostatCard(latest, now);
-
     // Update Powerwall
     const batteryPercent = latest.BatteryPercentage || 0;
     document.getElementById('powerwallPercent').textContent = `${batteryPercent.toFixed(1)}%`;
@@ -105,75 +149,12 @@ function updateDashboard() {
     powerwallStaleInfo.textContent = powerwallAge;
     powerwallStaleInfo.style.display = 'block';
 
-    // Update power flow
-    document.getElementById('solarPower').textContent = `${(latest.SolarPowerKw || 0).toFixed(1)} kW`;
-
-    const batteryPower = latest.BatteryPowerKw || 0;
-    const batteryElement = document.getElementById('batteryPower');
-    batteryElement.textContent = `${Math.abs(batteryPower).toFixed(1)} kW`;
-    batteryElement.className = `power-value ${batteryPower < 0 ? 'battery-charging' : batteryPower > 0 ? 'battery-discharging' : ''}`;
-
-    const gridPower = latest.GridPowerKw || 0;
-    const gridElement = document.getElementById('gridPower');
-    gridElement.textContent = `${Math.abs(gridPower).toFixed(1)} kW`;
-    gridElement.className = `power-value ${gridPower > 0 ? 'grid-positive' : gridPower < 0 ? 'grid-negative' : ''}`;
-
     updateVehicleCard('Model3', 'model3', latest, now, BATTERY_CAPACITIES.MODEL_3);
     updateVehicleCard('ModelX', 'modelX', latest, now, BATTERY_CAPACITIES.MODEL_X);
 
     // Show dashboard
     document.getElementById('loading').style.display = 'none';
     document.getElementById('dashboard').style.display = 'block';
-}
-
-function updateThermostatCard(latest, currentTime) {
-    const tempElement = document.getElementById('thermostatTemp');
-    const modeDisplayElement = document.getElementById('thermostatModeDisplay');
-    const targetElement = document.getElementById('thermostatTarget');
-    const modeElement = document.getElementById('thermostatMode');
-    const statusElement = document.getElementById('thermostatStatus');
-    const humidityElement = document.getElementById('thermostatHumidity');
-    const staleInfoElement = document.getElementById('thermostatStaleInfo');
-    const ecoLeafElement = document.getElementById('ecoLeaf');
-
-    if (latest.ThermostatIsOnline) {
-        const temp = latest.ThermostatCurrentTempF || 0;
-        const targetTemp = latest.ThermostatTargetTempF || 0;
-        const mode = latest.ThermostatMode || 'OFF';
-        const status = latest.ThermostatStatus || 'OFF';
-
-        tempElement.textContent = `${temp.toFixed(0)}`;
-        modeDisplayElement.textContent = mode === 'OFF' ? 'Off' : 'Comfort';
-        targetElement.textContent = targetTemp > 0 ? `Target: ${targetTemp.toFixed(0)}°F` : 'Target: --°F';
-        modeElement.textContent = mode;
-        statusElement.textContent = status;
-        humidityElement.textContent = `${latest.ThermostatHumidity || '--'}%`;
-
-        // Show/hide eco leaf based on mode
-        ecoLeafElement.style.display = mode !== 'OFF' && !latest.ThermostatIsActivelyRunning ? 'block' : 'none';
-
-        // Always show data age for thermostat
-        const dataAge = formatTimeDifference(convertToPDT(latest.LocalTimestamp), currentTime);
-        staleInfoElement.textContent = dataAge;
-        staleInfoElement.style.display = 'block';
-
-        // Check for temperature crossing alerts
-        const indoorTemp = temp;
-        const outdoorTemp = latest.WeatherTemperatureF || 0;
-
-        if (temperatureAlertSystem && indoorTemp > 0 && outdoorTemp > -50) {
-            temperatureAlertSystem.checkTemperatureCrossing(indoorTemp, outdoorTemp);
-        }
-    } else {
-        tempElement.textContent = '--';
-        modeDisplayElement.textContent = 'Offline';
-        targetElement.textContent = 'Target: --°F';
-        modeElement.textContent = 'Offline';
-        statusElement.textContent = 'Offline';
-        humidityElement.textContent = '--%';
-        ecoLeafElement.style.display = 'none';
-        staleInfoElement.style.display = 'none';
-    }
 }
 
 function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batteryCapacity) {
@@ -228,9 +209,16 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
 
         if (chargingRateElement) {
             if (dataToUse[`${vehiclePrefix}IsCharging`] && latest[`${vehiclePrefix}IsAvailable`]) {
-                // Use amps to calculate kW charging rate
-                const chargeAmps = dataToUse[`${vehiclePrefix}ChargeAmps`] || 0;
-                chargingRateElement.textContent = `${calculateKwh(chargeAmps)} kW`;
+                // ChargeAmps is the requested limit, not what's flowing; use measured current/voltage
+                const actualCurrent = dataToUse[`${vehiclePrefix}ChargerActualCurrent`] || 0;
+                const voltage = dataToUse[`${vehiclePrefix}ChargerVoltage`] || 0;
+                const powerKw = (actualCurrent > 0 && voltage > 100)
+                    ? (actualCurrent * voltage) / 1000
+                    : (dataToUse[`${vehiclePrefix}ChargerPowerKw`] || 0);
+                const amps = (actualCurrent > 0 && voltage > 100)
+                    ? actualCurrent
+                    : Math.round((powerKw * 1000) / 240);
+                chargingRateElement.textContent = `${powerKw.toFixed(1)} kW • ${amps}A`;
             } else {
                 chargingRateElement.textContent = '-- kW';
             }

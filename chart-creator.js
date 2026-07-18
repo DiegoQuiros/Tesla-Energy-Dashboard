@@ -1,3 +1,15 @@
+// Skip chart animations while scrubbing through history so redraws feel instant
+function chartAnimation() {
+    return (window.timeNavigator && !window.timeNavigator.isInLiveMode()) ? false : undefined;
+}
+
+// Slice a sorted data array to [dayStart, dayEnd] using binary search
+function sliceDataRange(sortedData, rangeStart, rangeEnd) {
+    const startIdx = TimeNavigator.upperBound(sortedData, new Date(rangeStart.getTime() - 1));
+    const endIdx = TimeNavigator.upperBound(sortedData, rangeEnd);
+    return sortedData.slice(startIdx, endIdx);
+}
+
 function createCharts() {
     if (typeof Chart === 'undefined') {
         console.error('Chart.js is not loaded');
@@ -7,6 +19,8 @@ function createCharts() {
     const todayData = getTodayDataForCurrentTime();
     console.log(`Creating charts with ${todayData.length} today's data points`);
 
+    createDailySolarChart();
+
     if (todayData.length === 0) {
         console.warn('No data for today to display in charts');
         return;
@@ -15,6 +29,130 @@ function createCharts() {
     createTemperatureChart(todayData);
     createSolarChart(todayData);
     createBatteryChart(todayData);
+}
+
+function createDailySolarChart() {
+    const canvas = document.getElementById('dailySolarChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    // Destroy existing chart
+    if (dailySolarChart) {
+        dailySolarChart.destroy();
+    }
+
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 365);
+    cutoff.setHours(0, 0, 0, 0);
+
+    // Integrate power over each sample interval to get kWh per day
+    const dailyTotals = new Map();
+    for (let i = 0; i < energyData.length; i++) {
+        const point = energyData[i];
+        const date = convertToPDT(point.LocalTimestamp);
+        if (date < cutoff) continue;
+
+        // Interval this sample covers: time until the next sample, capped at
+        // 30 minutes so collector outages don't inflate the totals
+        let dtHours = 0;
+        if (i < energyData.length - 1) {
+            dtHours = (convertToPDT(energyData[i + 1].LocalTimestamp) - date) / 3600000;
+        }
+        dtHours = Math.min(Math.max(dtHours, 0), 0.5);
+
+        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        let entry = dailyTotals.get(key);
+        if (!entry) {
+            entry = { date: new Date(date.getFullYear(), date.getMonth(), date.getDate()), solarKwh: 0, gridKwh: 0 };
+            dailyTotals.set(key, entry);
+        }
+        entry.solarKwh += Math.max(0, point.SolarPowerKw || 0) * dtHours;
+        entry.gridKwh += Math.max(0, point.GridPowerKw || 0) * dtHours; // positive = importing
+    }
+
+    // Overlay the daily summary blob: authoritative for completed days (it covers
+    // history the raw window no longer holds); raw data still provides today's bar
+    const now = new Date();
+    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    for (const s of dailySummaryData) {
+        if (!s || !s.Date || s.Date >= todayKey) continue;
+        const [y, m, d] = s.Date.split('-').map(Number);
+        const date = new Date(y, m - 1, d);
+        if (date < cutoff) continue;
+        dailyTotals.set(s.Date, { date, solarKwh: s.SolarKwh || 0, gridKwh: s.GridImportKwh || 0 });
+    }
+
+    const days = [...dailyTotals.values()].sort((a, b) => a.date - b.date);
+    if (days.length === 0) return;
+
+    const labels = days.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+    const solarData = days.map(d => Math.round(d.solarKwh * 10) / 10);
+    const gridData = days.map(d => Math.round(d.gridKwh * 10) / 10);
+
+    dailySolarChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Solar Production (kWh)',
+                    data: solarData,
+                    backgroundColor: 'rgba(255, 204, 0, 0.7)',
+                    borderColor: '#ffcc00',
+                    borderWidth: 1
+                },
+                {
+                    label: 'Grid Used (kWh)',
+                    data: gridData,
+                    backgroundColor: 'rgba(255, 107, 53, 0.7)',
+                    borderColor: '#ff6b35',
+                    borderWidth: 1
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: chartAnimation(),
+            plugins: {
+                legend: {
+                    labels: {
+                        color: '#ffffff'
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: context => `${context.dataset.label}: ${context.parsed.y.toFixed(1)} kWh`
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    stacked: true,
+                    ticks: {
+                        color: '#888',
+                        maxTicksLimit: 30
+                    },
+                    grid: {
+                        color: 'rgba(255, 255, 255, 0.1)'
+                    }
+                },
+                y: {
+                    stacked: true,
+                    beginAtZero: true,
+                    ticks: {
+                        color: '#888',
+                        callback: function (value) {
+                            return value + ' kWh';
+                        }
+                    },
+                    grid: {
+                        color: 'rgba(255, 255, 255, 0.1)'
+                    }
+                }
+            }
+        }
+    });
 }
 
 // Function to create charts for current time navigator state
@@ -48,10 +186,7 @@ function createTemperatureChart(todayData) {
     const endOfYesterday = new Date(yesterday);
     endOfYesterday.setHours(23, 59, 59, 999);
 
-    const yesterdayData = dataSource.filter(point => {
-        const pointDate = convertToPDT(point.LocalTimestamp);
-        return pointDate >= yesterday && pointDate <= endOfYesterday;
-    });
+    const yesterdayData = sliceDataRange(dataSource, yesterday, endOfYesterday);
 
     // Filter data to every 15 minutes
     const filteredData = todayData.filter((point, index) => {
@@ -73,19 +208,11 @@ function createTemperatureChart(todayData) {
         return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     });
 
-    const indoorTemps = filteredData.map(point =>
-        (point.ThermostatCurrentTempF && point.ThermostatCurrentTempF > 32) ? point.ThermostatCurrentTempF : null
-    );
-
     const outdoorTemps = filteredData.map(point =>
         (point.WeatherTemperatureF && point.WeatherTemperatureF > -50) ? point.WeatherTemperatureF : null
     );
 
     // Yesterday's temperature data
-    const indoorTempsYesterday = filteredYesterdayData.map(point =>
-        (point.ThermostatCurrentTempF && point.ThermostatCurrentTempF > 32) ? point.ThermostatCurrentTempF : null
-    );
-
     const outdoorTempsYesterday = filteredYesterdayData.map(point =>
         (point.WeatherTemperatureF && point.WeatherTemperatureF > -50) ? point.WeatherTemperatureF : null
     );
@@ -116,7 +243,6 @@ function createTemperatureChart(todayData) {
         }
 
         timeLabels.push(currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
-        indoorTemps.push(null);
         outdoorTemps.push(null);
 
         // Move to next 15-minute interval
@@ -125,17 +251,6 @@ function createTemperatureChart(todayData) {
 
     const datasets = [
         // Yesterday's data (darker shades, thinner lines)
-        {
-            label: 'Indoor Temperature (Yesterday)',
-            data: indoorTempsYesterday,
-            borderColor: '#2a5599', // Darker shade of blue
-            backgroundColor: 'rgba(42, 85, 153, 0.05)',
-            tension: 0.4,
-            borderWidth: 2, // 25% thinner than 3
-            pointRadius: 1.5, // 25% smaller than 2
-            pointBackgroundColor: '#2a5599',
-            spanGaps: true
-        },
         {
             label: 'Outdoor Temperature (Yesterday)',
             data: outdoorTempsYesterday,
@@ -148,17 +263,6 @@ function createTemperatureChart(todayData) {
             spanGaps: true
         },
         // Today's data
-        {
-            label: 'Indoor Temperature',
-            data: indoorTemps,
-            borderColor: '#4a9eff',
-            backgroundColor: 'rgba(74, 158, 255, 0.1)',
-            tension: 0.4,
-            borderWidth: 3,
-            pointRadius: 2,
-            pointBackgroundColor: '#4a9eff',
-            spanGaps: true
-        },
         {
             label: 'Outdoor Temperature',
             data: outdoorTemps,
@@ -181,6 +285,7 @@ function createTemperatureChart(todayData) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            animation: chartAnimation(),
             plugins: {
                 legend: {
                     labels: {
@@ -238,10 +343,7 @@ function createSolarChart(todayData) {
     const endOfYesterday = new Date(yesterday);
     endOfYesterday.setHours(23, 59, 59, 999);
 
-    const yesterdayData = dataSource.filter(point => {
-        const pointDate = convertToPDT(point.LocalTimestamp);
-        return pointDate >= yesterday && pointDate <= endOfYesterday;
-    });
+    const yesterdayData = sliceDataRange(dataSource, yesterday, endOfYesterday);
 
     // Get all solar data (not filtered by time) for both days to find meaningful start/end points
     const allTodayData = todayData;
@@ -432,6 +534,7 @@ function createSolarChart(todayData) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            animation: chartAnimation(),
             plugins: {
                 legend: {
                     labels: {
@@ -481,10 +584,7 @@ function createBatteryChart(todayData) {
     const endOfYesterday = new Date(yesterday);
     endOfYesterday.setHours(23, 59, 59, 999);
 
-    const yesterdayData = energyData.filter(point => {
-        const pointDate = convertToPDT(point.LocalTimestamp);
-        return pointDate >= yesterday && pointDate <= endOfYesterday;
-    });
+    const yesterdayData = sliceDataRange(energyData, yesterday, endOfYesterday);
 
     const timeLabels = todayData.map(point => {
         const date = convertToPDT(point.LocalTimestamp);
@@ -601,6 +701,7 @@ function createBatteryChart(todayData) {
         // Predicted Powerwall data (no legend)
         {
             label: '',
+            predictionFor: 'Powerwall',
             data: Array(actualDataCount).fill(null).concat(predictions.powerwall),
             borderColor: 'transparent', // No connecting lines
             backgroundColor: 'rgba(0, 204, 0, 0.3)',
@@ -654,6 +755,7 @@ function createBatteryChart(todayData) {
 
             datasets.push({
                 label: '',
+                predictionFor: model3Label,
                 data: Array(actualDataCount).fill(null).concat(predictions.model3),
                 borderColor: 'transparent',
                 backgroundColor: predictionBgColor,
@@ -708,6 +810,7 @@ function createBatteryChart(todayData) {
 
             datasets.push({
                 label: '',
+                predictionFor: modelXLabel,
                 data: Array(actualDataCount).fill(null).concat(predictions.modelX),
                 borderColor: 'transparent',
                 backgroundColor: predictionBgColor,
@@ -729,6 +832,7 @@ function createBatteryChart(todayData) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            animation: chartAnimation(),
             plugins: {
                 legend: {
                     labels: {
@@ -737,6 +841,20 @@ function createBatteryChart(todayData) {
                             // Hide legend items with empty labels (predicted data)
                             return legendItem.text !== '';
                         }
+                    },
+                    onClick: function (e, legendItem, legend) {
+                        // Toggle the clicked dataset and its prediction dataset together
+                        const chart = legend.chart;
+                        const idx = legendItem.datasetIndex;
+                        const show = !chart.isDatasetVisible(idx);
+                        chart.setDatasetVisibility(idx, show);
+                        const label = chart.data.datasets[idx].label;
+                        chart.data.datasets.forEach((ds, i) => {
+                            if (ds.predictionFor === label) {
+                                chart.setDatasetVisibility(i, show);
+                            }
+                        });
+                        chart.update();
                     }
                 }
             },

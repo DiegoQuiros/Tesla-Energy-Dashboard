@@ -26,6 +26,12 @@ class ChartMaximizer {
             batteryBtn.addEventListener('click', () => this.toggleMaximize('batteryChartContainer', 'batteryChart'));
         }
 
+        // Daily Solar Chart
+        const dailySolarBtn = document.getElementById('dailySolarMaximizeBtn');
+        if (dailySolarBtn) {
+            dailySolarBtn.addEventListener('click', () => this.toggleMaximize('dailySolarChartContainer', 'dailySolarChart'));
+        }
+
         // Handle ESC key to minimize
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && this.maximizedChart) {

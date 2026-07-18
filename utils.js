@@ -1,8 +1,17 @@
 // Helper function to convert UTC to Pacific Daylight Time
+// Memoized: the toLocaleString timezone conversion is expensive and the same
+// timestamps get converted thousands of times per render/time-step.
+const _pdtCache = new Map();
 function convertToPDT(dateString) {
-    const date = new Date(dateString);
-    // Convert to Pacific Time (handles PDT/PST automatically)
-    return new Date(date.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
+    let ms = _pdtCache.get(dateString);
+    if (ms === undefined) {
+        const date = new Date(dateString);
+        // Convert to Pacific Time (handles PDT/PST automatically)
+        ms = new Date(date.toLocaleString("en-US", { timeZone: "America/Los_Angeles" })).getTime();
+        _pdtCache.set(dateString, ms);
+    }
+    // Return a fresh Date so callers can safely mutate the result
+    return new Date(ms);
 }
 
 // Helper function to format time difference
@@ -66,14 +75,6 @@ function calculateBatteryKwh(percentage, capacity) {
     return ((percentage / 100) * capacity).toFixed(1);
 }
 
-// Helper function to calculate charging power from amps and voltage
-function calculateKwh(amps, voltage = 249) {
-    if (!amps || amps <= 0) return "0.0";
-    const watts = amps * voltage;
-    const kwh = watts / 1000;
-    return kwh.toFixed(1);
-}
-
 // Function to find the last available data for a vehicle
 function findLastVehicleData(vehiclePrefix) {
     for (let i = energyData.length - 1; i >= 0; i--) {
@@ -100,13 +101,6 @@ function refreshStaleDataLabels() {
     const powerwallStaleInfo = document.getElementById('powerwallStaleInfo');
     if (powerwallStaleInfo) {
         powerwallStaleInfo.textContent = powerwallAge;
-    }
-
-    // Update Thermostat stale info
-    const thermostatAge = formatTimeDifference(lastDataTimestamp, now);
-    const thermostatStaleInfo = document.getElementById('thermostatStaleInfo');
-    if (thermostatStaleInfo) {
-        thermostatStaleInfo.textContent = thermostatAge;
     }
 
     // Update Model 3 stale info (now in energy flow section)
