@@ -141,7 +141,7 @@ function updateDashboard() {
     const batteryPercent = latest.BatteryPercentage || 0;
     document.getElementById('powerwallPercent').textContent = `${batteryPercent.toFixed(1)}%`;
     document.getElementById('powerwallKwh').textContent = `${calculateBatteryKwh(batteryPercent, BATTERY_CAPACITIES.POWERWALL)} kWh`;
-    document.getElementById('powerwallBar').style.width = `${100 - batteryPercent}%`; // Invert for gradient effect
+    document.getElementById('powerwallBar').style.width = `${batteryPercent}%`;
 
     // Add stale info for Powerwall
     const powerwallAge = formatTimeDifference(lastUpdated, now);
@@ -197,7 +197,7 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
         const batteryPercent = dataToUse[`${vehiclePrefix}Battery`] || 0;
         percentElement.textContent = `${batteryPercent}%`;
         kwhElement.textContent = `${calculateBatteryKwh(batteryPercent, batteryCapacity)} kWh`;
-        barElement.style.width = `${100 - batteryPercent}%`; // Invert for gradient effect
+        barElement.style.width = `${batteryPercent}%`;
 
         if (latest[`${vehiclePrefix}IsAvailable`]) {
             statusElement.textContent = dataToUse[`${vehiclePrefix}ChargingState`] || 'Unknown';
