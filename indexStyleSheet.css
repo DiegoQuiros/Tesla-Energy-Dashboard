@@ -125,49 +125,30 @@ body {
     margin-bottom: 20px;
 }
 
-.forecast-grid {
+/* 16-day forecast: temperature-range and solar-potential charts side by side */
+.forecast-charts-row {
     display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 15px;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
 }
 
-.forecast-day {
-    background: rgba(255, 255, 255, 0.06);
-    border-radius: 12px;
-    padding: 12px 8px;
-    text-align: center;
-}
-
-.forecast-day-name {
-    font-weight: bold;
-    color: #87ceeb;
-    margin-bottom: 6px;
-}
-
-.forecast-icon {
-    font-size: 2rem;
-}
-
-.forecast-temps {
-    margin: 6px 0;
-    font-weight: bold;
-}
-
-.forecast-low {
-    color: #8fa3c0;
-    margin-left: 6px;
-}
-
-.forecast-desc {
-    font-size: 0.75rem;
-    color: #b0c4de;
-}
-
-@media (max-width: 768px) {
-    .forecast-grid {
-        grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+@media (max-width: 900px) {
+    .forecast-charts-row {
+        grid-template-columns: 1fr;
     }
 }
+
+.forecast-chart-title {
+    font-weight: bold;
+    color: #87ceeb;
+    margin: 14px 0 6px;
+}
+
+.forecast-chart-wrapper {
+    position: relative;
+    height: 220px;
+}
+
 
 .weather-temp {
     font-size: 3rem;
