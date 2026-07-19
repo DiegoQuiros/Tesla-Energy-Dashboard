@@ -345,6 +345,8 @@ function createSolarChart(todayData) {
 
     const yesterdayData = sliceDataRange(dataSource, yesterday, endOfYesterday);
 
+    updateSolarKwhStats(todayData, dataSource, currentTime);
+
     // Get all solar data (not filtered by time) for both days to find meaningful start/end points
     const allTodayData = todayData;
     const allYesterdayData = yesterdayData;
@@ -567,6 +569,60 @@ function createSolarChart(todayData) {
             }
         }
     });
+}
+
+// Updates the "X kWh so far / ~Y kWh expected" summary in the solar chart header.
+// Produced-so-far integrates today's measured power. The rest-of-day estimate reuses
+// the prediction engine's 7-day median per-slot solar profile, scaled by how today's
+// recent production compares to that profile (so a cloudy or clear day shifts the
+// estimate instead of blindly assuming today matches yesterday).
+function updateSolarKwhStats(todayData, dataSource, currentTime) {
+    const statsEl = document.getElementById('solarKwhStats');
+    if (!statsEl) return;
+
+    if (todayData.length === 0) {
+        statsEl.textContent = '';
+        return;
+    }
+
+    // Integrate measured solar power over each sample interval, capped at
+    // 30 minutes so collector outages don't inflate the total
+    let producedKwh = 0;
+    const sorted = [...todayData].sort((a, b) => convertToPDT(a.LocalTimestamp) - convertToPDT(b.LocalTimestamp));
+    for (let i = 0; i < sorted.length - 1; i++) {
+        let dtHours = (convertToPDT(sorted[i + 1].LocalTimestamp) - convertToPDT(sorted[i].LocalTimestamp)) / 3600000;
+        dtHours = Math.min(Math.max(dtHours, 0), 0.5);
+        producedKwh += Math.max(0, sorted[i].SolarPowerKw || 0) * dtHours;
+    }
+
+    let remainingKwh = null;
+    if (typeof buildDailyProfiles === 'function' && typeof computeSolarScale === 'function') {
+        const profiles = buildDailyProfiles(dataSource, currentTime);
+        const solarScale = computeSolarScale(todayData, profiles.solar, currentTime);
+
+        const slotMinutes = (24 * 60) / PREDICTION_CONFIG.SLOTS_PER_DAY;
+        const nowMinutes = currentTime.getHours() * 60 + currentTime.getMinutes() + currentTime.getSeconds() / 60;
+
+        remainingKwh = 0;
+        for (let s = 0; s < PREDICTION_CONFIG.SLOTS_PER_DAY; s++) {
+            const slotStart = s * slotMinutes;
+            const slotEnd = slotStart + slotMinutes;
+            if (slotEnd <= nowMinutes) continue;
+            // Count only the not-yet-elapsed portion of the current slot
+            const fraction = slotStart < nowMinutes ? (slotEnd - nowMinutes) / slotMinutes : 1;
+            remainingKwh += profiles.solar[s] * solarScale * fraction * (slotMinutes / 60);
+        }
+    }
+
+    const fmt = kwh => (Math.round(kwh * 10) / 10).toFixed(1);
+    if (remainingKwh !== null) {
+        statsEl.innerHTML =
+            `<span class="kwh-value">${fmt(producedKwh)} kWh</span> so far &nbsp;•&nbsp; ` +
+            `~<span class="kwh-value">${fmt(remainingKwh)} kWh</span> to go &nbsp;•&nbsp; ` +
+            `~<span class="kwh-value">${fmt(producedKwh + remainingKwh)} kWh</span> total`;
+    } else {
+        statsEl.innerHTML = `<span class="kwh-value">${fmt(producedKwh)} kWh</span> so far`;
+    }
 }
 
 function createBatteryChart(todayData) {

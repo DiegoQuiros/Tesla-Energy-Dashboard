@@ -7,9 +7,9 @@ const PREDICTION_CONFIG = {
     RECENT_LOAD_MINUTES: 45,    // window for smoothing the current house load
     GRID_DECAY_MINUTES: 60,     // fade out the current grid import (snapshot only describes right now)
     SOLAR_SCALE_WINDOW_HOURS: 3,// window of today's solar used to estimate weather vs profile
-    SESSION_GAP_MINUTES: 40,    // gap that splits two EV charging sessions
-    MODEL3_FALLBACK_REMAINING_MINUTES: 60,
-    MODELX_FALLBACK_REMAINING_MINUTES: 120
+    MIN_EV_CHARGE_KW: 1.2,      // below ~5A the car won't charge at all
+    DEFAULT_EV_CHARGE_LIMIT: 80,// cars normally charge to 80%
+    DEFAULT_WALL_CONNECTOR_KW: 6// fallback wall connector power (24A x 249V)
 };
 
 function generateBatteryPredictions(todayData) {
@@ -69,8 +69,13 @@ function generateBatteryPredictions(todayData) {
 
     // Convert current battery percentage to kWh for Powerwall
     let currentPowerwallKwh = ((latest.BatteryPercentage || 0) / 100) * BATTERY_CAPACITIES.POWERWALL;
-    let currentModel3Level = latest.Model3Battery || 0;
-    let currentModelXLevel = latest.ModelXBattery || 0;
+
+    // A sleeping car reports no data on the latest sample; use its most recent
+    // report (within 24h) so the prediction still knows its level and limit
+    const model3State = lastKnownCarState(dataSource, 'Model3', now);
+    const modelXState = lastKnownCarState(dataSource, 'ModelX', now);
+    let currentModel3Level = model3State ? model3State.Model3Battery : 0;
+    let currentModelXLevel = modelXState ? modelXState.ModelXBattery : 0;
 
     const gridImportKw = Math.max(0, latest.GridPowerKw || 0);
 
@@ -79,20 +84,22 @@ function generateBatteryPredictions(todayData) {
     const model3ActualChargingKw = homeChargingPowerKw(latest, 'Model3');
     const modelXActualChargingKw = homeChargingPowerKw(latest, 'ModelX');
 
-    // In-progress charging sessions rarely run until the charge limit; estimate when
-    // they will actually stop from how long past sessions lasted. Not applied while
-    // simulating, since the user is explicitly asking "what if the car keeps charging".
-    let model3StopTime = null;
-    let modelXStopTime = null;
-    if (!simulationSettings) {
-        if (Model3IsCharging) {
-            model3StopTime = estimateChargingStopTime(dataSource, todayData, 'Model3', now,
-                PREDICTION_CONFIG.MODEL3_FALLBACK_REMAINING_MINUTES);
-        }
-        if (ModelXIsCharging) {
-            modelXStopTime = estimateChargingStopTime(dataSource, todayData, 'ModelX', now,
-                PREDICTION_CONFIG.MODELX_FALLBACK_REMAINING_MINUTES);
-        }
+    // Household charging routine: the Powerwall always fills to 100% first, the
+    // Model 3 charges to its limit, and once it finishes the Model X is plugged
+    // into the same wall connector and takes whatever solar surplus the Powerwall
+    // doesn't need. Model the future Model X plug-in here. Not applied while
+    // simulating, since the user is explicitly controlling the chargers then.
+    const model3Limit = (model3State && model3State.Model3ChargeLimit) || PREDICTION_CONFIG.DEFAULT_EV_CHARGE_LIMIT;
+    const modelXLimit = (modelXState && modelXState.ModelXChargeLimit) || PREDICTION_CONFIG.DEFAULT_EV_CHARGE_LIMIT;
+
+    let modelXQueued = false;
+    let wallConnectorKw = 0;
+    if (!simulationSettings && modelXState && !ModelXIsCharging && currentModelXLevel < modelXLimit) {
+        modelXQueued = true;
+        // Rate cap for the future session: the car's usual requested amps
+        wallConnectorKw = modelXState.ModelXChargeAmps > 0
+            ? modelXState.ModelXChargeAmps * 249 / 1000
+            : PREDICTION_CONFIG.DEFAULT_WALL_CONNECTOR_KW;
     }
 
     while (currentTime <= endOfDay) {
@@ -100,63 +107,6 @@ function generateBatteryPredictions(todayData) {
 
         const minutesFromNow = (currentTime - now) / (1000 * 60);
         const slot = timeSlotIndex(currentTime);
-
-        // MODEL 3 charging power
-        let model3ChargingPowerKw = 0;
-        if (simulationSettings && simulationSettings.Model3Amps > 0) {
-            model3ChargingPowerKw = simulationSettings.Model3Amps * 249 / 1000;
-        } else if (!simulationSettings && Model3IsCharging && model3ActualChargingKw > 0) {
-            // Weekday 2:15 PM rule: Model 3 charging stops at 2:15 PM on weekdays
-            const todayTwoFifteen = new Date(currentTime);
-            todayTwoFifteen.setHours(14, 15, 0, 0);
-            const isWeekday = currentTime.getDay() >= 1 && currentTime.getDay() <= 5;
-
-            if (isWeekday && currentTime > todayTwoFifteen) {
-                model3ChargingPowerKw = 0;
-            } else if (model3StopTime && currentTime > model3StopTime) {
-                model3ChargingPowerKw = 0;
-            } else {
-                model3ChargingPowerKw = model3ActualChargingKw;
-            }
-        }
-
-        // MODEL X charging power
-        let modelXChargingPowerKw = 0;
-        if (simulationSettings && simulationSettings.ModelXAmps > 0) {
-            modelXChargingPowerKw = simulationSettings.ModelXAmps * 249 / 1000;
-        } else if (!simulationSettings && ModelXIsCharging && modelXActualChargingKw > 0) {
-            if (modelXStopTime && currentTime > modelXStopTime) {
-                modelXChargingPowerKw = 0;
-            } else {
-                modelXChargingPowerKw = modelXActualChargingKw;
-            }
-        }
-
-        // Cap EV power by what the car actually needs to reach its charge limit,
-        // then advance the car's battery level
-        if (model3ChargingPowerKw > 0 && latest.Model3ChargeLimit > 0) {
-            const neededKwh = Math.max(0, (latest.Model3ChargeLimit - currentModel3Level) / 100 * BATTERY_CAPACITIES.MODEL_3);
-            model3ChargingPowerKw = Math.min(model3ChargingPowerKw, neededKwh / 0.25);
-        }
-        if (model3ChargingPowerKw > 0) {
-            const percentageGain = (model3ChargingPowerKw * 0.25 / BATTERY_CAPACITIES.MODEL_3) * 100;
-            currentModel3Level = Math.min(latest.Model3ChargeLimit || 100, currentModel3Level + percentageGain);
-            if (latest.Model3ChargeLimit > 0 && currentModel3Level >= latest.Model3ChargeLimit) {
-                Model3IsCharging = false;
-            }
-        }
-
-        if (modelXChargingPowerKw > 0 && latest.ModelXChargeLimit > 0) {
-            const neededKwh = Math.max(0, (latest.ModelXChargeLimit - currentModelXLevel) / 100 * BATTERY_CAPACITIES.MODEL_X);
-            modelXChargingPowerKw = Math.min(modelXChargingPowerKw, neededKwh / 0.25);
-        }
-        if (modelXChargingPowerKw > 0) {
-            const percentageGain = (modelXChargingPowerKw * 0.25 / BATTERY_CAPACITIES.MODEL_X) * 100;
-            currentModelXLevel = Math.min(latest.ModelXChargeLimit || 100, currentModelXLevel + percentageGain);
-            if (latest.ModelXChargeLimit > 0 && currentModelXLevel >= latest.ModelXChargeLimit) {
-                ModelXIsCharging = false;
-            }
-        }
 
         // House load: blend the live smoothed load into the historical profile so a
         // momentary spike/lull right now doesn't get extrapolated for hours
@@ -169,6 +119,76 @@ function generateBatteryPredictions(todayData) {
         // Grid import credit fades out — the snapshot only describes right now
         const gridCreditKw = gridImportKw * Math.max(0, 1 - minutesFromNow / PREDICTION_CONFIG.GRID_DECAY_MINUTES);
 
+        // Charging is solar-managed with the Powerwall getting first claim on the
+        // surplus (the routine: Powerwall to 100%, the rest goes to the cars). A
+        // car's future rate follows that surplus — as the Powerwall fills up, the
+        // manager hands the freed-up solar to whichever car is on the connector.
+        const powerwallNeedKw = Math.min(PREDICTION_CONFIG.MAX_POWERWALL_RATE_KW,
+            Math.max(0, (BATTERY_CAPACITIES.POWERWALL - currentPowerwallKwh) / 0.25));
+        const evSurplusKw = Math.max(0, solarKw - houseLoadKw - powerwallNeedKw);
+
+        // MODEL 3 charging power: surplus-following, floored at the measured rate
+        // (the manager grants the car a minimum share even while the Powerwall
+        // charges) and capped at the requested amps
+        let model3ChargingPowerKw = 0;
+        if (simulationSettings && simulationSettings.Model3Amps > 0) {
+            model3ChargingPowerKw = simulationSettings.Model3Amps * 249 / 1000;
+        } else if (!simulationSettings && Model3IsCharging && model3ActualChargingKw > 0) {
+            // Weekday 2:15 PM rule: Model 3 charging stops at 2:15 PM on weekdays
+            const todayTwoFifteen = new Date(currentTime);
+            todayTwoFifteen.setHours(14, 15, 0, 0);
+            const isWeekday = currentTime.getDay() >= 1 && currentTime.getDay() <= 5;
+
+            if (isWeekday && currentTime > todayTwoFifteen) {
+                model3ChargingPowerKw = 0;
+            } else {
+                const capKw = latest.Model3ChargeAmps > 0
+                    ? latest.Model3ChargeAmps * 249 / 1000
+                    : PREDICTION_CONFIG.DEFAULT_WALL_CONNECTOR_KW;
+                model3ChargingPowerKw = Math.min(capKw, Math.max(model3ActualChargingKw, evSurplusKw));
+            }
+        }
+
+        // MODEL X charging power
+        let modelXChargingPowerKw = 0;
+        if (simulationSettings && simulationSettings.ModelXAmps > 0) {
+            modelXChargingPowerKw = simulationSettings.ModelXAmps * 249 / 1000;
+        } else if (!simulationSettings && ModelXIsCharging && modelXActualChargingKw > 0) {
+            const capKw = latest.ModelXChargeAmps > 0
+                ? latest.ModelXChargeAmps * 249 / 1000
+                : PREDICTION_CONFIG.DEFAULT_WALL_CONNECTOR_KW;
+            modelXChargingPowerKw = Math.min(capKw, Math.max(modelXActualChargingKw, evSurplusKw));
+        } else if (modelXQueued && model3ChargingPowerKw === 0 && currentModelXLevel < modelXLimit) {
+            // Model 3 is done: the Model X takes over the (single) wall connector
+            // and charges from whatever surplus the Powerwall doesn't need
+            if (evSurplusKw >= PREDICTION_CONFIG.MIN_EV_CHARGE_KW) {
+                modelXChargingPowerKw = Math.min(wallConnectorKw, evSurplusKw);
+            }
+        }
+
+        // Cap EV power by what the car actually needs to reach its charge limit,
+        // then advance the car's battery level
+        if (model3ChargingPowerKw > 0) {
+            const neededKwh = Math.max(0, (model3Limit - currentModel3Level) / 100 * BATTERY_CAPACITIES.MODEL_3);
+            model3ChargingPowerKw = Math.min(model3ChargingPowerKw, neededKwh / 0.25);
+            const percentageGain = (model3ChargingPowerKw * 0.25 / BATTERY_CAPACITIES.MODEL_3) * 100;
+            currentModel3Level = Math.min(model3Limit, currentModel3Level + percentageGain);
+            if (currentModel3Level >= model3Limit) {
+                Model3IsCharging = false;
+            }
+        }
+
+        if (modelXChargingPowerKw > 0) {
+            const neededKwh = Math.max(0, (modelXLimit - currentModelXLevel) / 100 * BATTERY_CAPACITIES.MODEL_X);
+            modelXChargingPowerKw = Math.min(modelXChargingPowerKw, neededKwh / 0.25);
+            const percentageGain = (modelXChargingPowerKw * 0.25 / BATTERY_CAPACITIES.MODEL_X) * 100;
+            currentModelXLevel = Math.min(modelXLimit, currentModelXLevel + percentageGain);
+            if (currentModelXLevel >= modelXLimit) {
+                ModelXIsCharging = false;
+                modelXQueued = false;
+            }
+        }
+
         const netKw = solarKw - houseLoadKw - model3ChargingPowerKw - modelXChargingPowerKw + gridCreditKw;
         const rateKw = Math.min(PREDICTION_CONFIG.MAX_POWERWALL_RATE_KW,
             Math.max(-PREDICTION_CONFIG.MAX_POWERWALL_RATE_KW, netKw));
@@ -176,8 +196,8 @@ function generateBatteryPredictions(todayData) {
             Math.max(0, currentPowerwallKwh + rateKw * 0.25));
 
         predictions.powerwall.push((currentPowerwallKwh / BATTERY_CAPACITIES.POWERWALL) * 100);
-        predictions.model3.push(latest.Model3IsAvailable ? currentModel3Level : null);
-        predictions.modelX.push(latest.ModelXIsAvailable ? currentModelXLevel : null);
+        predictions.model3.push(model3State ? currentModel3Level : null);
+        predictions.modelX.push(modelXState ? currentModelXLevel : null);
 
         // Move to next 15-minute interval
         currentTime.setMinutes(currentTime.getMinutes() + 15);
@@ -325,48 +345,21 @@ function homeChargingPowerKw(point, carPrefix) {
 }
 
 /**
- * Estimates when an in-progress EV charging session will stop, based on how long
- * past sessions lasted (median remaining time given the current session's elapsed time).
+ * Most recent data point (within 24h) where a car reported battery data.
+ * Cars sleep and drop off the feed, so the latest sample often has no car data.
  * @param {Array} dataSource - Full energy data history
- * @param {Array} todayData - Today's data (used to find the current session's start)
  * @param {string} carPrefix - 'Model3' or 'ModelX'
  * @param {Date} now - Current prediction time
- * @param {number} fallbackMinutes - Remaining time to assume when there is too little history
- * @returns {Date} Estimated stop time
+ * @returns {Object|null} The data point, or null if the car hasn't reported in 24h
  */
-function estimateChargingStopTime(dataSource, todayData, carPrefix, now, fallbackMinutes) {
-    const gapMs = PREDICTION_CONFIG.SESSION_GAP_MINUTES * 60 * 1000;
-    const powerField = carPrefix + 'ChargerPowerKw';
-
-    // Durations of completed past sessions
-    const durations = [];
-    let sessionStart = null;
-    let sessionEnd = null;
-    for (const point of dataSource) {
+function lastKnownCarState(dataSource, carPrefix, now) {
+    const cutoff = now.getTime() - 24 * 3600 * 1000;
+    for (let i = dataSource.length - 1; i >= 0; i--) {
+        const point = dataSource[i];
         const pointDate = convertToPDT(point.LocalTimestamp);
-        if (pointDate >= now) break;
-        if ((point[powerField] || 0) > 1) {
-            if (sessionStart === null) sessionStart = pointDate;
-            sessionEnd = pointDate;
-        } else if (sessionStart !== null && (pointDate - sessionEnd) > gapMs) {
-            durations.push((sessionEnd - sessionStart) / 60000 + 7.5); // + half a sample interval
-            sessionStart = null;
-        }
+        if (pointDate > now) continue;
+        if (pointDate < cutoff) break;
+        if (point[carPrefix + 'IsAvailable'] && point[carPrefix + 'Battery'] != null) return point;
     }
-
-    // Elapsed time of the current session
-    let currentStart = null;
-    let prev = null;
-    for (const point of todayData) {
-        if ((point[powerField] || 0) > 1) {
-            const pointDate = convertToPDT(point.LocalTimestamp);
-            if (currentStart === null || (prev && (pointDate - prev) > gapMs)) currentStart = pointDate;
-            prev = pointDate;
-        }
-    }
-    const elapsedMinutes = currentStart === null ? 0 : (now - currentStart) / 60000;
-
-    const remaining = durations.filter(d => d > elapsedMinutes).map(d => d - elapsedMinutes);
-    const remainingMinutes = remaining.length >= 4 ? medianValue(remaining) : fallbackMinutes;
-    return new Date(now.getTime() + remainingMinutes * 60000);
+    return null;
 }
