@@ -53,6 +53,13 @@
                                             <div class="battery-level">
                                                 <div class="battery-info">
                                                     <span id="model3Percent">--%</span>
+                                                    <span class="charge-connector" id="model3Connector" title="Not plugged in">
+                                                        <svg viewBox="0 0 48 24" xmlns="http://www.w3.org/2000/svg">
+                                                            <path class="connector-cable" d="M 46 4 C 34 4, 30 20, 18 20 L 12 20" fill="none" stroke-width="3" stroke-linecap="round" />
+                                                            <path class="connector-flow" d="M 46 4 C 34 4, 30 20, 18 20 L 12 20" fill="none" stroke-width="3" stroke-linecap="round" />
+                                                            <rect class="connector-head" x="3" y="15" width="9" height="10" rx="2" />
+                                                        </svg>
+                                                    </span>
                                                     <span id="model3Kwh" class="kwh-display">-- kWh</span>
                                                 </div>
                                                 <div class="battery-bar-container">
@@ -87,6 +94,13 @@
                                             <div class="battery-level">
                                                 <div class="battery-info">
                                                     <span id="modelXPercent">--%</span>
+                                                    <span class="charge-connector" id="modelXConnector" title="Not plugged in">
+                                                        <svg viewBox="0 0 48 24" xmlns="http://www.w3.org/2000/svg">
+                                                            <path class="connector-cable" d="M 46 4 C 34 4, 30 20, 18 20 L 12 20" fill="none" stroke-width="3" stroke-linecap="round" />
+                                                            <path class="connector-flow" d="M 46 4 C 34 4, 30 20, 18 20 L 12 20" fill="none" stroke-width="3" stroke-linecap="round" />
+                                                            <rect class="connector-head" x="3" y="15" width="9" height="10" rx="2" />
+                                                        </svg>
+                                                    </span>
                                                     <span id="modelXKwh" class="kwh-display">-- kWh</span>
                                                 </div>
                                                 <div class="battery-bar-container">
@@ -243,6 +257,7 @@
         </div>
     </div>
 
+    <script src="shared-config.js"></script>
     <script src="config.js"></script>
     <script src="utils.js"></script>
     <script src="time-navigator.js"></script>

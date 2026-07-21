@@ -1,9 +1,9 @@
-// Auto-refresh every 5 minutes
+// Auto-refresh at the collector's sampling cadence
 function startAutoRefresh() {
     setInterval(() => {
         console.log('Auto-refreshing data...');
         loadEnergyData();
-    }, 15 * 60 * 1000); // 15 minutes
+    }, DATA_INTERVAL_MINUTES * 60 * 1000);
 }
 
 // Start timer for refreshing stale data labels every minute
@@ -78,14 +78,14 @@ function scheduleSmartRefresh() {
     }
 
     // Calculate when the next data update should occur
-    // Data updates every 15 minutes, so find the next 15-minute interval after the last update
+    // Data updates every DATA_INTERVAL_MINUTES, so find the next interval boundary after the last update
     const lastUpdate = new Date(lastDataTimestamp);
     const nextUpdateTime = new Date(lastUpdate);
 
-    // Round up to the next 15-minute interval
+    // Round up to the next interval boundary
     const minutes = nextUpdateTime.getMinutes();
-    const nextQuarter = Math.ceil(minutes / 15) * 15;
-    nextUpdateTime.setMinutes(nextQuarter, 0, 0); // Set to next quarter hour
+    const nextQuarter = Math.ceil(minutes / DATA_INTERVAL_MINUTES) * DATA_INTERVAL_MINUTES;
+    nextUpdateTime.setMinutes(nextQuarter, 0, 0); // Set to next interval boundary
 
     // Add 10 seconds buffer to ensure data is available
     const refreshTime = new Date(nextUpdateTime.getTime() + 25000); // +25 seconds
@@ -93,9 +93,9 @@ function scheduleSmartRefresh() {
     const now = new Date();
     const timeUntilRefresh = refreshTime.getTime() - now.getTime();
 
-    // If the calculated time is in the past or too soon, wait for the next 15-minute interval
+    // If the calculated time is in the past or too soon, wait for the next interval boundary
     if (timeUntilRefresh <= 0) {
-        nextUpdateTime.setMinutes(nextUpdateTime.getMinutes() + 15);
+        nextUpdateTime.setMinutes(nextUpdateTime.getMinutes() + DATA_INTERVAL_MINUTES);
         const newRefreshTime = new Date(nextUpdateTime.getTime() + 15000);
         const newTimeUntilRefresh = newRefreshTime.getTime() - now.getTime();
 
@@ -126,7 +126,7 @@ function startSmartAutoRefresh() {
     // Initial schedule
     scheduleSmartRefresh();
 
-    // Keep the existing 15-minute fallback timer as backup, but only in live mode
+    // Keep the existing fallback timer as backup, but only in live mode
     setInterval(() => {
         if (!window.timeNavigator || window.timeNavigator.isInLiveMode()) {
             console.log('Fallback refresh triggered...');
@@ -135,5 +135,5 @@ function startSmartAutoRefresh() {
                 scheduleSmartRefresh();
             });
         }
-    }, 15 * 60 * 1000); // 15 minutes fallback
+    }, DATA_INTERVAL_MINUTES * 60 * 1000); // fallback at the collector cadence
 }

@@ -166,6 +166,7 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
     const rangeElement = document.getElementById(`${cardPrefix}Range`);
     const chargingRateElement = document.getElementById(`${cardPrefix}ChargingRate`);
     const staleInfoElement = document.getElementById(`${cardPrefix}StaleInfo`);
+    const connectorElement = document.getElementById(`${cardPrefix}Connector`);
 
     // Check if all required elements exist
     if (!percentElement || !kwhElement || !barElement || !statusElement || !rangeElement || !staleInfoElement) {
@@ -226,6 +227,19 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
         else
             console.warn(`Charging rate element not found for ${cardPrefix}`);
 
+        if (connectorElement) {
+            // Tesla reports 'Disconnected' when unplugged; any other state means the cable is in
+            const chargingState = dataToUse[`${vehiclePrefix}ChargingState`];
+            const isPlugged = latest[`${vehiclePrefix}IsAvailable`]
+                && chargingState && chargingState !== 'Disconnected';
+            const isCharging = isPlugged && dataToUse[`${vehiclePrefix}IsCharging`];
+            connectorElement.classList.toggle('plugged', !!isPlugged);
+            connectorElement.classList.toggle('charging', !!isCharging);
+            connectorElement.title = isCharging ? 'Charging'
+                : isPlugged ? 'Plugged in'
+                : 'Not plugged in';
+        }
+
         // Always show data age
         const dataAge = formatTimeDifference(dataTimestamp, currentTime);
         staleInfoElement.textContent = dataAge;
@@ -242,6 +256,11 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
         }
         else
             console.warn(`Charging rate element not found for ${cardPrefix}`);
+
+        if (connectorElement) {
+            connectorElement.classList.remove('plugged', 'charging');
+            connectorElement.title = 'Not plugged in';
+        }
 
         staleInfoElement.style.display = 'none';
     }

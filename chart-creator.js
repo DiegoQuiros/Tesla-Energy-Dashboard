@@ -188,19 +188,19 @@ function createTemperatureChart(todayData) {
 
     const yesterdayData = sliceDataRange(dataSource, yesterday, endOfYesterday);
 
-    // Filter data to every 15 minutes
+    // Filter data down to the collector's sampling cadence
     const filteredData = todayData.filter((point, index) => {
         if (index === 0) return true; // Always include first point
 
         const date = convertToPDT(point.LocalTimestamp);
-        return date.getMinutes() % 15 === 0; // Include points at :00, :15, :30, :45
+        return date.getMinutes() % DATA_INTERVAL_MINUTES === 0; // e.g. :00, :15, :30, :45
     });
 
     const filteredYesterdayData = yesterdayData.filter((point, index) => {
         if (index === 0) return true; // Always include first point
 
         const date = convertToPDT(point.LocalTimestamp);
-        return date.getMinutes() % 15 === 0; // Include points at :00, :15, :30, :45
+        return date.getMinutes() % DATA_INTERVAL_MINUTES === 0; // e.g. :00, :15, :30, :45
     });
 
     const timeLabels = filteredData.map(point => {
@@ -434,6 +434,56 @@ function createSolarChart(todayData) {
     if (chartStartMinute === null) chartStartMinute = 0; // 6:00 AM
     if (chartEndMinute === null) chartEndMinute = 14 * 60; // 8:00 PM
 
+    // Forecast solar for the rest of today using the prediction engine's 7-day
+    // median per-slot profile scaled by today's weather (same model as the kWh
+    // header estimate), truncated where the sun goes down.
+    let predictedPowerAt = null;
+    let predictionStartMinute = null;
+    let predictionEndMinute = null;
+    if (todayData.length > 0 &&
+        typeof buildDailyProfiles === 'function' && typeof computeSolarScale === 'function') {
+        const profiles = buildDailyProfiles(dataSource, currentTime);
+        const solarScale = computeSolarScale(todayData, profiles.solar, currentTime);
+        const slots = PREDICTION_CONFIG.SLOTS_PER_DAY;
+        const slotMinutes = (24 * 60) / slots;
+
+        // Profile value at a chart minute (minutes since 6am), linearly
+        // interpolated between 15-min slot midpoints so the dots don't step
+        const profilePowerAt = function (minute) {
+            const pos = (minute + 360) / slotMinutes - 0.5;
+            const s0 = Math.min(slots - 1, Math.max(0, Math.floor(pos)));
+            const s1 = Math.min(slots - 1, s0 + 1);
+            const frac = Math.min(1, Math.max(0, pos - s0));
+            return Math.max(0, (profiles.solar[s0] * (1 - frac) + profiles.solar[s1] * frac) * solarScale);
+        };
+
+        // Start the forecast at the last measured point (not wall-clock now, which
+        // can lag it) and anchor it there: fade the offset between the last measured
+        // power and the profile over the first 45 minutes so the dots continue the
+        // line instead of stepping up or down.
+        const sortedToday = [...todayData].sort((a, b) => convertToPDT(a.LocalTimestamp) - convertToPDT(b.LocalTimestamp));
+        const lastPoint = sortedToday[sortedToday.length - 1];
+        const lastDate = convertToPDT(lastPoint.LocalTimestamp);
+        predictionStartMinute = (lastDate.getHours() - 6) * 60 + lastDate.getMinutes();
+        const anchorOffset = Math.max(0, lastPoint.SolarPowerKw || 0) - profilePowerAt(predictionStartMinute);
+        const ANCHOR_FADE_MINUTES = 45;
+
+        predictedPowerAt = function (minute) {
+            const fade = Math.max(0, 1 - (minute - predictionStartMinute) / ANCHOR_FADE_MINUTES);
+            return Math.max(0, profilePowerAt(minute) + anchorOffset * fade);
+        };
+
+        // Find where predicted production ends (sunset) and truncate there
+        for (let minute = predictionStartMinute; minute <= 18 * 60; minute += 5) {
+            if (profilePowerAt(minute) > 0.05) predictionEndMinute = minute;
+        }
+        if (predictionEndMinute !== null && predictionEndMinute > predictionStartMinute) {
+            chartEndMinute = Math.max(chartEndMinute, predictionEndMinute);
+        } else {
+            predictedPowerAt = null; // sun is already down, nothing left to forecast
+        }
+    }
+
     // Filter data to meaningful time range and convert to time-of-day
     const todayTimeData = allTodayData
         .map(point => {
@@ -461,6 +511,7 @@ function createSolarChart(todayData) {
     const timeLabels = [];
     const todaySolarPowerData = [];
     const yesterdaySolarPowerData = [];
+    const predictedSolarPowerData = [];
 
     for (let minute = Math.floor(chartStartMinute / 5) * 5; minute <= chartEndMinute; minute += 5) {
         // Convert minutes back to time format
@@ -498,6 +549,15 @@ function createSolarChart(todayData) {
         // Find closest yesterday data point (within 2 minutes)
         const yesterdayMatch = yesterdayTimeData.find(d => Math.abs(d.minutes - minute) <= 2);
         yesterdaySolarPowerData.push(yesterdayMatch ? yesterdayMatch.power : null);
+
+        // Forecast for the rest of today, truncated at sunset. Only plot a dot
+        // every DATA_INTERVAL_MINUTES to match the collector's sampling cadence.
+        if (predictedPowerAt && minute > predictionStartMinute && minute <= predictionEndMinute &&
+            minute % DATA_INTERVAL_MINUTES === 0) {
+            predictedSolarPowerData.push(predictedPowerAt(minute));
+        } else {
+            predictedSolarPowerData.push(null);
+        }
     }
 
     const datasets = [{
@@ -511,6 +571,23 @@ function createSolarChart(todayData) {
         pointRadius: 2,
         spanGaps: true
     }];
+
+    // Predicted solar for the rest of today, styled like the Powerwall forecast dots
+    if (predictedPowerAt && predictedSolarPowerData.some(val => val !== null)) {
+        datasets.push({
+            label: '',
+            predictionFor: 'Today\'s Solar Production (kW)',
+            data: predictedSolarPowerData,
+            borderColor: 'transparent', // No connecting lines
+            backgroundColor: 'rgba(255, 204, 0, 0.3)',
+            pointStyle: 'circle',
+            pointRadius: 2,
+            pointBorderColor: '#ffcc00',
+            pointBackgroundColor: 'rgba(255, 204, 0, 0.5)',
+            fill: false,
+            showLine: false
+        });
+    }
 
     // Only add yesterday's data if we have any
     if (yesterdayTimeData.length > 0) {
@@ -540,7 +617,25 @@ function createSolarChart(todayData) {
             plugins: {
                 legend: {
                     labels: {
-                        color: '#ffffff'
+                        color: '#ffffff',
+                        filter: function (legendItem) {
+                            // Hide legend items with empty labels (predicted data)
+                            return legendItem.text !== '';
+                        }
+                    },
+                    onClick: function (e, legendItem, legend) {
+                        // Toggle the clicked dataset and its prediction dataset together
+                        const chart = legend.chart;
+                        const idx = legendItem.datasetIndex;
+                        const show = !chart.isDatasetVisible(idx);
+                        chart.setDatasetVisibility(idx, show);
+                        const label = chart.data.datasets[idx].label;
+                        chart.data.datasets.forEach((ds, i) => {
+                            if (ds.predictionFor === label) {
+                                chart.setDatasetVisibility(i, show);
+                            }
+                        });
+                        chart.update();
                     }
                 }
             },
@@ -624,6 +719,44 @@ function updateSolarKwhStats(todayData, dataSource, currentTime) {
         statsEl.innerHTML = `<span class="kwh-value">${fmt(producedKwh)} kWh</span> so far`;
     }
 }
+
+// Vertical marker lines where the charge automation is predicted to start or
+// stop a car (events supplied by generateBatteryPredictions)
+const autoChargeMarkersPlugin = {
+    id: 'autoChargeMarkers',
+    afterDatasetsDraw(chart) {
+        const cfg = chart.options.plugins.autoChargeMarkers;
+        if (!cfg || !cfg.events || cfg.events.length === 0) return;
+        const { ctx, chartArea, scales } = chart;
+
+        ctx.save();
+        cfg.events.forEach((event, i) => {
+            const x = scales.x.getPixelForValue(event.chartIndex);
+            if (x < chartArea.left || x > chartArea.right) return;
+
+            ctx.strokeStyle = event.color;
+            ctx.setLineDash([6, 4]);
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(x, chartArea.top);
+            ctx.lineTo(x, chartArea.bottom);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            ctx.font = '11px sans-serif';
+            const width = ctx.measureText(event.label).width;
+            let textX = x + 5;
+            if (textX + width > chartArea.right) textX = x - width - 5;
+            // Stagger labels vertically so nearby markers stay readable
+            const textY = chartArea.top + 14 + (i % 3) * 15;
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+            ctx.fillRect(textX - 3, textY - 11, width + 6, 15);
+            ctx.fillStyle = event.color;
+            ctx.fillText(event.label, textX, textY);
+        });
+        ctx.restore();
+    }
+};
 
 function createBatteryChart(todayData) {
     const ctx = document.getElementById('batteryChart').getContext('2d');
@@ -879,8 +1012,21 @@ function createBatteryChart(todayData) {
         }
     }
 
+    // Vertical markers where the automation is predicted to start/stop a car.
+    // Prediction indices sit after today's actual points on the category axis.
+    const markerEvents = (predictions.events || []).map(event => {
+        const carName = event.car === 'Model3' ? 'Model 3' : 'Model X';
+        const timeText = event.time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        return {
+            chartIndex: actualDataCount + event.index,
+            color: event.car === 'Model3' ? '#ff4444' : '#4477ff',
+            label: `${event.type === 'start' ? '▶' : '⏹'} ${carName} auto-${event.type} ${timeText}`
+        };
+    });
+
     batteryChart = new Chart(ctx, {
         type: 'line',
+        plugins: [autoChargeMarkersPlugin],
         data: {
             labels: timeLabels.concat(predictions.labels),
             datasets: datasets
@@ -890,6 +1036,9 @@ function createBatteryChart(todayData) {
             maintainAspectRatio: false,
             animation: chartAnimation(),
             plugins: {
+                autoChargeMarkers: {
+                    events: markerEvents
+                },
                 legend: {
                     labels: {
                         color: '#ffffff',

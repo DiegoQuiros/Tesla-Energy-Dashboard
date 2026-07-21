@@ -1,22 +1,51 @@
-// Prediction tuning constants (validated by backtest against ~80 days of collected data)
-const PREDICTION_CONFIG = {
-    PROFILE_DAYS: 7,            // prior days used to build solar/load profiles
-    SLOTS_PER_DAY: 96,          // 15-minute slots in a day
-    MAX_POWERWALL_RATE_KW: 5,   // Powerwall max charge/discharge rate
-    LOAD_BLEND_MINUTES: 120,    // fade from live measured load into the historical profile
-    RECENT_LOAD_MINUTES: 45,    // window for smoothing the current house load
-    GRID_DECAY_MINUTES: 60,     // fade out the current grid import (snapshot only describes right now)
-    SOLAR_SCALE_WINDOW_HOURS: 3,// window of today's solar used to estimate weather vs profile
-    MIN_EV_CHARGE_KW: 1.2,      // below ~5A the car won't charge at all
-    DEFAULT_EV_CHARGE_LIMIT: 80,// cars normally charge to 80%
-    DEFAULT_WALL_CONNECTOR_KW: 6// fallback wall connector power (24A x 249V)
-};
+// Prediction tuning constants — single source of truth in shared-config.js
+// (shared with the C# charge automation's port of this prediction)
+const PREDICTION_CONFIG = SHARED_CONFIG.PREDICTION_CONFIG;
+const CHARGE_AUTOMATION = SHARED_CONFIG.CHARGE_AUTOMATION;
 
 function generateBatteryPredictions(todayData) {
     if (todayData.length === 0) {
         return { labels: [], powerwall: [], model3: [], modelX: [] };
     }
 
+    const ctx = buildPredictionContext(todayData);
+
+    // Mirror the ChargeAutomationManager's decisions (auto-start in the morning,
+    // latest-safe auto-stop in the afternoon) so the forecast shows what the
+    // automation will actually do — not a session running unmanaged to the car's
+    // limit. Skipped while simulating: the user controls the chargers then.
+    const overrides = ctx.simulationSettings ? {} : decideAutomationOverrides(ctx);
+
+    const result = simulateDay(ctx, overrides);
+
+    // Predicted automation commands, for the chart's vertical marker lines.
+    // index = position within the prediction arrays (first slot at/after the event)
+    const events = [];
+    if (overrides.start) {
+        events.push({ type: 'start', car: overrides.start.key, time: overrides.start.at });
+    }
+    for (const car of Object.keys(overrides.stops || {})) {
+        events.push({ type: 'stop', car, time: overrides.stops[car] });
+    }
+    for (const event of events) {
+        event.index = result.times.findIndex(t => t >= event.time);
+    }
+    const visibleEvents = events.filter(e => e.index >= 0).sort((a, b) => a.time - b.time);
+
+    return {
+        labels: result.labels,
+        powerwall: result.powerwall,
+        model3: result.model3,
+        modelX: result.modelX,
+        events: visibleEvents
+    };
+}
+
+/**
+ * Everything the day simulation needs, computed once so the automation-mirroring
+ * decision sims (a few dozen per prediction) stay cheap.
+ */
+function buildPredictionContext(todayData) {
     const latest = todayData[todayData.length - 1];
 
     // Check if simulation is active and use simulated charging settings
@@ -37,13 +66,6 @@ function generateBatteryPredictions(todayData) {
     const endOfDay = new Date(now);
     endOfDay.setHours(23, 59, 59);
 
-    const predictions = {
-        labels: [],
-        powerwall: [],
-        model3: [],
-        modelX: []
-    };
-
     // Use filtered data if in historical mode
     let dataSource = energyData;
     if (window.timeNavigator && !window.timeNavigator.isInLiveMode()) {
@@ -51,159 +73,448 @@ function generateBatteryPredictions(todayData) {
     }
 
     // Historical per-15-min-slot profiles for solar production and house load,
-    // plus a weather factor comparing today's recent solar against the profile
+    // plus weather factors comparing today's recent solar against the profile.
+    // The potential-solar variants answer the automation's "could the Powerwall
+    // still refill?" question — the produced profile is curtailed on typical
+    // afternoons (Powerwall full by noon), which reads far too pessimistic there.
     const profiles = buildDailyProfiles(dataSource, now);
+    const potentialSolar = toPotentialSolarProfile(profiles.solar);
     const solarScale = computeSolarScale(todayData, profiles.solar, now);
+    const potentialSolarScale = computePotentialSolarScale(todayData, profiles.solar, potentialSolar, now);
     const recentBaseLoad = computeRecentBaseLoad(todayData, now);
 
-    // Generate 15-minute interval predictions until end of day
-    let currentTime = new Date(now);
-    let minutes = currentTime.getMinutes();
-    let roundedMinutes = Math.floor(minutes / 15) * 15;
-
-    if (currentTime.getSeconds() > 0 || currentTime.getMilliseconds() > 0 || minutes % 15 !== 0) {
-        roundedMinutes += 15;
+    // Midpoint of the profile's daylight window (the automation's "solar noon")
+    let firstDaylight = -1, lastDaylight = -1;
+    for (let s = 0; s < profiles.solar.length; s++) {
+        if (profiles.solar[s] > 0.15) {
+            if (firstDaylight < 0) firstDaylight = s;
+            lastDaylight = s;
+        }
     }
-
-    currentTime.setMinutes(roundedMinutes, 0, 0);
-
-    // Convert current battery percentage to kWh for Powerwall
-    let currentPowerwallKwh = ((latest.BatteryPercentage || 0) / 100) * BATTERY_CAPACITIES.POWERWALL;
+    const solarNoon = new Date(now);
+    solarNoon.setHours(0, 0, 0, 0);
+    if (firstDaylight >= 0 && lastDaylight > firstDaylight) {
+        solarNoon.setMinutes((firstDaylight + lastDaylight) / 2 * 15 + 7.5);
+    } else {
+        solarNoon.setHours(12);
+    }
 
     // A sleeping car reports no data on the latest sample; use its most recent
     // report (within 24h) so the prediction still knows its level and limit
-    const model3State = lastKnownCarState(dataSource, 'Model3', now);
-    const modelXState = lastKnownCarState(dataSource, 'ModelX', now);
-    let currentModel3Level = model3State ? model3State.Model3Battery : 0;
-    let currentModelXLevel = modelXState ? modelXState.ModelXBattery : 0;
-
-    const gridImportKw = Math.max(0, latest.GridPowerKw || 0);
-
-    let Model3IsCharging = latest.Model3IsCharging;
-    let ModelXIsCharging = latest.ModelXIsCharging;
-    const model3ActualChargingKw = homeChargingPowerKw(latest, 'Model3');
-    const modelXActualChargingKw = homeChargingPowerKw(latest, 'ModelX');
-
-    // Household charging routine: the Powerwall always fills to 100% first, the
-    // Model 3 charges to its limit, and once it finishes the Model X is plugged
-    // into the same wall connector and takes whatever solar surplus the Powerwall
-    // doesn't need. Model the future Model X plug-in here. Not applied while
-    // simulating, since the user is explicitly controlling the chargers then.
-    const model3Limit = (model3State && model3State.Model3ChargeLimit) || PREDICTION_CONFIG.DEFAULT_EV_CHARGE_LIMIT;
-    const modelXLimit = (modelXState && modelXState.ModelXChargeLimit) || PREDICTION_CONFIG.DEFAULT_EV_CHARGE_LIMIT;
-
-    let modelXQueued = false;
-    let wallConnectorKw = 0;
-    if (!simulationSettings && modelXState && !ModelXIsCharging && currentModelXLevel < modelXLimit) {
-        modelXQueued = true;
-        // Rate cap for the future session: the car's usual requested amps
-        wallConnectorKw = modelXState.ModelXChargeAmps > 0
-            ? modelXState.ModelXChargeAmps * 249 / 1000
+    const state = {
+        Model3: lastKnownCarState(dataSource, 'Model3', now),
+        ModelX: lastKnownCarState(dataSource, 'ModelX', now)
+    };
+    const level = {}, limit = {}, chargingNow = {}, actualKw = {}, capKw = {}, wallConnectorKw = {};
+    for (const key of ['Model3', 'ModelX']) {
+        level[key] = state[key] ? state[key][key + 'Battery'] : 0;
+        limit[key] = (state[key] && state[key][key + 'ChargeLimit']) || PREDICTION_CONFIG.DEFAULT_EV_CHARGE_LIMIT;
+        chargingNow[key] = !!latest[key + 'IsCharging'];
+        actualKw[key] = homeChargingPowerKw(latest, key);
+        capKw[key] = latest[key + 'ChargeAmps'] > 0
+            ? latest[key + 'ChargeAmps'] * PREDICTION_CONFIG.WALL_CONNECTOR_VOLTAGE / 1000
+            : PREDICTION_CONFIG.DEFAULT_WALL_CONNECTOR_KW;
+        // Rate cap for a future auto-started session: the car's usual requested amps
+        wallConnectorKw[key] = state[key] && state[key][key + 'ChargeAmps'] > 0
+            ? state[key][key + 'ChargeAmps'] * PREDICTION_CONFIG.WALL_CONNECTOR_VOLTAGE / 1000
             : PREDICTION_CONFIG.DEFAULT_WALL_CONNECTOR_KW;
     }
 
-    while (currentTime <= endOfDay) {
-        predictions.labels.push(currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
+    return {
+        latest, now, endOfDay, dataSource, simulationSettings,
+        profiles, potentialSolar, solarScale, potentialSolarScale,
+        recentBaseLoad, solarNoon,
+        gridImportKw: Math.max(0, latest.GridPowerKw || 0),
+        startPowerwallKwh: ((latest.BatteryPercentage || 0) / 100) * BATTERY_CAPACITIES.POWERWALL,
+        state, level, limit, chargingNow, actualKw, capKw, wallConnectorKw
+    };
+}
 
-        const minutesFromNow = (currentTime - now) / (1000 * 60);
+/**
+ * First 15-minute slot boundary at or after the given time (matches the
+ * automation's NextSlotBoundary).
+ */
+function nextSlotBoundary(date) {
+    const t = new Date(date);
+    const minutes = t.getMinutes();
+    let roundedMinutes = Math.floor(minutes / 15) * 15;
+    if (t.getSeconds() > 0 || t.getMilliseconds() > 0 || minutes % 15 !== 0) {
+        roundedMinutes += 15;
+    }
+    t.setMinutes(roundedMinutes, 0, 0);
+    return t;
+}
+
+/**
+ * Simulates the rest of the day in 15-minute slots — the shared engine behind
+ * the chart and the automation-mirroring decisions (same model as the C#
+ * PredictPowerwallDay; keep them in sync).
+ *
+ * overrides:
+ * - usePotentialSolar: swap the produced-solar profile for the potential one
+ *   (decision sims only — the chart shows what will actually be produced)
+ * - applyModel3WeekdayStop (default true): the weekday-2:15-PM routine stop
+ * - stops: { Model3?: Date, ModelX?: Date } — force that car's charging off
+ *   from the given time (mirrors an automation charge_stop)
+ * - start: { key, at } — a predicted automation charge_start: the car begins
+ *   surplus-following charging at that time
+ */
+function simulateDay(ctx, overrides) {
+    const o = overrides || {};
+    const stops = o.stops || {};
+    const applyWeekdayStop = o.applyModel3WeekdayStop !== false;
+    const solarProfile = o.usePotentialSolar ? ctx.potentialSolar : ctx.profiles.solar;
+    const solarScale = o.usePotentialSolar ? ctx.potentialSolarScale : ctx.solarScale;
+
+    const result = {
+        labels: [], powerwall: [], model3: [], modelX: [],
+        times: [], chargeRateKw: [],
+        reaches100: false, fullTime: null,
+        peakPercent: (ctx.latest.BatteryPercentage || 0),
+        lastUsefulSolarEnd: null,
+        solarLoadCrossover: null
+    };
+
+    let powerwallKwh = ctx.startPowerwallKwh;
+    if (powerwallKwh >= BATTERY_CAPACITIES.POWERWALL - 1e-9) {
+        result.reaches100 = true;
+        result.fullTime = new Date(ctx.now);
+    }
+
+    const level = { Model3: ctx.level.Model3, ModelX: ctx.level.ModelX };
+    const charging = { Model3: ctx.chargingNow.Model3, ModelX: ctx.chargingNow.ModelX };
+    const capacity = { Model3: BATTERY_CAPACITIES.MODEL_3, ModelX: BATTERY_CAPACITIES.MODEL_X };
+
+    const forcedOff = (key, t) => key in stops && t >= stops[key];
+
+    let currentTime = nextSlotBoundary(ctx.now);
+    while (currentTime <= ctx.endOfDay) {
+        const minutesFromNow = (currentTime - ctx.now) / (1000 * 60);
         const slot = timeSlotIndex(currentTime);
 
         // House load: blend the live smoothed load into the historical profile so a
         // momentary spike/lull right now doesn't get extrapolated for hours
         const blendWeight = Math.max(0, 1 - minutesFromNow / PREDICTION_CONFIG.LOAD_BLEND_MINUTES);
-        const houseLoadKw = blendWeight * recentBaseLoad + (1 - blendWeight) * profiles.load[slot];
+        const houseLoadKw = blendWeight * ctx.recentBaseLoad + (1 - blendWeight) * ctx.profiles.load[slot];
 
         // Solar: historical profile shape scaled by today's weather
-        const solarKw = profiles.solar[slot] * solarScale;
+        const solarKw = solarProfile[slot] * solarScale;
 
         // Grid import credit fades out — the snapshot only describes right now
-        const gridCreditKw = gridImportKw * Math.max(0, 1 - minutesFromNow / PREDICTION_CONFIG.GRID_DECAY_MINUTES);
+        const gridCreditKw = ctx.gridImportKw * Math.max(0, 1 - minutesFromNow / PREDICTION_CONFIG.GRID_DECAY_MINUTES);
 
         // Charging is solar-managed with the Powerwall getting first claim on the
         // surplus (the routine: Powerwall to 100%, the rest goes to the cars). A
         // car's future rate follows that surplus — as the Powerwall fills up, the
         // manager hands the freed-up solar to whichever car is on the connector.
         const powerwallNeedKw = Math.min(PREDICTION_CONFIG.MAX_POWERWALL_RATE_KW,
-            Math.max(0, (BATTERY_CAPACITIES.POWERWALL - currentPowerwallKwh) / 0.25));
+            Math.max(0, (BATTERY_CAPACITIES.POWERWALL - powerwallKwh) / 0.25));
         const evSurplusKw = Math.max(0, solarKw - houseLoadKw - powerwallNeedKw);
 
         // MODEL 3 charging power: surplus-following, floored at the measured rate
         // (the manager grants the car a minimum share even while the Powerwall
         // charges) and capped at the requested amps
         let model3ChargingPowerKw = 0;
-        if (simulationSettings && simulationSettings.Model3Amps > 0) {
-            model3ChargingPowerKw = simulationSettings.Model3Amps * 249 / 1000;
-        } else if (!simulationSettings && Model3IsCharging && model3ActualChargingKw > 0) {
+        if (ctx.simulationSettings && ctx.simulationSettings.Model3Amps > 0) {
+            model3ChargingPowerKw = ctx.simulationSettings.Model3Amps * PREDICTION_CONFIG.WALL_CONNECTOR_VOLTAGE / 1000;
+        } else if (!ctx.simulationSettings && charging.Model3 && ctx.actualKw.Model3 > 0 && !forcedOff('Model3', currentTime)) {
             // Weekday 2:15 PM rule: Model 3 charging stops at 2:15 PM on weekdays
             const todayTwoFifteen = new Date(currentTime);
             todayTwoFifteen.setHours(14, 15, 0, 0);
             const isWeekday = currentTime.getDay() >= 1 && currentTime.getDay() <= 5;
 
-            if (isWeekday && currentTime > todayTwoFifteen) {
+            if (applyWeekdayStop && isWeekday && currentTime > todayTwoFifteen) {
                 model3ChargingPowerKw = 0;
             } else {
-                const capKw = latest.Model3ChargeAmps > 0
-                    ? latest.Model3ChargeAmps * 249 / 1000
-                    : PREDICTION_CONFIG.DEFAULT_WALL_CONNECTOR_KW;
-                model3ChargingPowerKw = Math.min(capKw, Math.max(model3ActualChargingKw, evSurplusKw));
+                model3ChargingPowerKw = Math.min(ctx.capKw.Model3, Math.max(ctx.actualKw.Model3, evSurplusKw));
+            }
+        } else if (chargesFromStart(ctx, o, 'Model3', currentTime, level, stops)) {
+            if (evSurplusKw >= PREDICTION_CONFIG.MIN_EV_CHARGE_KW) {
+                model3ChargingPowerKw = Math.min(ctx.wallConnectorKw.Model3, evSurplusKw);
             }
         }
 
         // MODEL X charging power
         let modelXChargingPowerKw = 0;
-        if (simulationSettings && simulationSettings.ModelXAmps > 0) {
-            modelXChargingPowerKw = simulationSettings.ModelXAmps * 249 / 1000;
-        } else if (!simulationSettings && ModelXIsCharging && modelXActualChargingKw > 0) {
-            const capKw = latest.ModelXChargeAmps > 0
-                ? latest.ModelXChargeAmps * 249 / 1000
-                : PREDICTION_CONFIG.DEFAULT_WALL_CONNECTOR_KW;
-            modelXChargingPowerKw = Math.min(capKw, Math.max(modelXActualChargingKw, evSurplusKw));
-        } else if (modelXQueued && model3ChargingPowerKw === 0 && currentModelXLevel < modelXLimit) {
-            // Model 3 is done: the Model X takes over the (single) wall connector
-            // and charges from whatever surplus the Powerwall doesn't need
+        if (ctx.simulationSettings && ctx.simulationSettings.ModelXAmps > 0) {
+            modelXChargingPowerKw = ctx.simulationSettings.ModelXAmps * PREDICTION_CONFIG.WALL_CONNECTOR_VOLTAGE / 1000;
+        } else if (!ctx.simulationSettings && charging.ModelX && ctx.actualKw.ModelX > 0 && !forcedOff('ModelX', currentTime)) {
+            modelXChargingPowerKw = Math.min(ctx.capKw.ModelX, Math.max(ctx.actualKw.ModelX, evSurplusKw));
+        } else if (model3ChargingPowerKw === 0 && chargesFromStart(ctx, o, 'ModelX', currentTime, level, stops)) {
+            // Single wall connector: the auto-started car only charges once the
+            // other car's session is over, from whatever surplus the Powerwall
+            // doesn't need
             if (evSurplusKw >= PREDICTION_CONFIG.MIN_EV_CHARGE_KW) {
-                modelXChargingPowerKw = Math.min(wallConnectorKw, evSurplusKw);
+                modelXChargingPowerKw = Math.min(ctx.wallConnectorKw.ModelX, evSurplusKw);
             }
         }
 
         // Cap EV power by what the car actually needs to reach its charge limit,
         // then advance the car's battery level
         if (model3ChargingPowerKw > 0) {
-            const neededKwh = Math.max(0, (model3Limit - currentModel3Level) / 100 * BATTERY_CAPACITIES.MODEL_3);
+            const neededKwh = Math.max(0, (ctx.limit.Model3 - level.Model3) / 100 * capacity.Model3);
             model3ChargingPowerKw = Math.min(model3ChargingPowerKw, neededKwh / 0.25);
-            const percentageGain = (model3ChargingPowerKw * 0.25 / BATTERY_CAPACITIES.MODEL_3) * 100;
-            currentModel3Level = Math.min(model3Limit, currentModel3Level + percentageGain);
-            if (currentModel3Level >= model3Limit) {
-                Model3IsCharging = false;
+            const percentageGain = (model3ChargingPowerKw * 0.25 / capacity.Model3) * 100;
+            level.Model3 = Math.min(ctx.limit.Model3, level.Model3 + percentageGain);
+            if (level.Model3 >= ctx.limit.Model3) {
+                charging.Model3 = false;
             }
         }
 
         if (modelXChargingPowerKw > 0) {
-            const neededKwh = Math.max(0, (modelXLimit - currentModelXLevel) / 100 * BATTERY_CAPACITIES.MODEL_X);
+            const neededKwh = Math.max(0, (ctx.limit.ModelX - level.ModelX) / 100 * capacity.ModelX);
             modelXChargingPowerKw = Math.min(modelXChargingPowerKw, neededKwh / 0.25);
-            const percentageGain = (modelXChargingPowerKw * 0.25 / BATTERY_CAPACITIES.MODEL_X) * 100;
-            currentModelXLevel = Math.min(modelXLimit, currentModelXLevel + percentageGain);
-            if (currentModelXLevel >= modelXLimit) {
-                ModelXIsCharging = false;
-                modelXQueued = false;
+            const percentageGain = (modelXChargingPowerKw * 0.25 / capacity.ModelX) * 100;
+            level.ModelX = Math.min(ctx.limit.ModelX, level.ModelX + percentageGain);
+            if (level.ModelX >= ctx.limit.ModelX) {
+                charging.ModelX = false;
             }
         }
 
         const netKw = solarKw - houseLoadKw - model3ChargingPowerKw - modelXChargingPowerKw + gridCreditKw;
         const rateKw = Math.min(PREDICTION_CONFIG.MAX_POWERWALL_RATE_KW,
             Math.max(-PREDICTION_CONFIG.MAX_POWERWALL_RATE_KW, netKw));
-        currentPowerwallKwh = Math.min(BATTERY_CAPACITIES.POWERWALL,
-            Math.max(0, currentPowerwallKwh + rateKw * 0.25));
+        const previousKwh = powerwallKwh;
+        powerwallKwh = Math.min(BATTERY_CAPACITIES.POWERWALL,
+            Math.max(0, powerwallKwh + rateKw * 0.25));
 
-        predictions.powerwall.push((currentPowerwallKwh / BATTERY_CAPACITIES.POWERWALL) * 100);
-        predictions.model3.push(model3State ? currentModel3Level : null);
-        predictions.modelX.push(modelXState ? currentModelXLevel : null);
+        const percent = (powerwallKwh / BATTERY_CAPACITIES.POWERWALL) * 100;
+        result.labels.push(currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
+        result.powerwall.push(percent);
+        result.model3.push(ctx.state.Model3 ? level.Model3 : null);
+        result.modelX.push(ctx.state.ModelX ? level.ModelX : null);
+        result.times.push(new Date(currentTime));
+        // Realized charge rate (kWh delta) — reads 0 once the Powerwall is full,
+        // like the live BatteryPowerKw the automation's start trigger watches
+        result.chargeRateKw.push(Math.max(0, (powerwallKwh - previousKwh) / 0.25));
+        result.peakPercent = Math.max(result.peakPercent, percent);
+
+        if (!result.reaches100 && powerwallKwh >= BATTERY_CAPACITIES.POWERWALL - 1e-9) {
+            result.reaches100 = true;
+            result.fullTime = new Date(currentTime);
+        }
+        if (solarKw >= PREDICTION_CONFIG.MIN_EV_CHARGE_KW) {
+            result.lastUsefulSolarEnd = new Date(currentTime.getTime() + 15 * 60 * 1000);
+        }
+        // Last moment PRODUCED solar still covers the house load — after this the
+        // Powerwall can only decline, so 100% must be reached by then. Always
+        // judged on the produced profile, even in potential-solar decision sims:
+        // the potential profile mirrors the (stronger) morning ramp onto the
+        // evening, which would push this moment later than the panels can deliver.
+        const producedSolarKw = ctx.profiles.solar[slot] * ctx.solarScale;
+        if (producedSolarKw >= houseLoadKw) {
+            result.solarLoadCrossover = new Date(currentTime.getTime() + 15 * 60 * 1000);
+        }
 
         // Move to next 15-minute interval
         currentTime.setMinutes(currentTime.getMinutes() + 15);
     }
 
-    return predictions;
+    return result;
+}
+
+/**
+ * True when a predicted automation charge_start puts this car on the connector
+ * at this time (started, not yet stopped, still below its limit).
+ */
+function chargesFromStart(ctx, o, key, t, level, stops) {
+    return !ctx.simulationSettings &&
+        o.start && o.start.key === key && t >= o.start.at &&
+        !(key in stops && t >= stops[key]) &&
+        level[key] < ctx.limit[key];
+}
+
+/**
+ * Mirrors ChargeAutomationManager: while a car charges, find the automation's
+ * stop time (the LATEST one that still lets the Powerwall reach 100%); while no
+ * car charges, find the moment the morning auto-start trigger would fire for
+ * the plugged-in car — then the stop side for that future session too.
+ * Returns simulateDay overrides.
+ */
+function decideAutomationOverrides(ctx) {
+    const o = { applyModel3WeekdayStop: true, stops: {} };
+
+    // A car actively charging at home routes to the stop side
+    let chargingCar = null;
+    for (const key of ['Model3', 'ModelX']) {
+        if (ctx.latest[key + 'IsAvailable'] && ctx.latest[key + 'IsCharging'] &&
+            !ctx.latest[key + 'FastChargerPresent'] && ctx.actualKw[key] > 0) {
+            chargingCar = key;
+            break;
+        }
+    }
+
+    if (chargingCar) {
+        // The sim's weekday-2:15-PM Model 3 stop models the household routine; if
+        // it's already past 2:15 and the Model 3 is demonstrably still charging,
+        // that assumption is wrong for today — drop it so the comparison is real
+        const isWeekday = ctx.now.getDay() >= 1 && ctx.now.getDay() <= 5;
+        const pastTwoFifteen = ctx.now.getHours() > 14 ||
+            (ctx.now.getHours() === 14 && ctx.now.getMinutes() > 15);
+        if (chargingCar === 'Model3' && isWeekday && pastTwoFifteen) {
+            o.applyModel3WeekdayStop = false;
+        }
+
+        const stopAt = decideStopTime(ctx, chargingCar, o, ctx.now);
+        if (stopAt) o.stops[chargingCar] = stopAt;
+    }
+
+    // Morning auto-start: would the automation put the (other) plugged-in car on
+    // the connector later today?
+    const candidate = pickStartCandidate(ctx, chargingCar);
+    if (candidate) {
+        const startAt = findAutoStartTime(ctx, candidate, o);
+        if (startAt) {
+            o.start = { key: candidate, at: startAt };
+            const stopAt = decideStopTime(ctx, candidate, o, startAt);
+            if (stopAt) o.stops[candidate] = stopAt;
+        }
+    }
+
+    return o;
+}
+
+/**
+ * "Reaches 100%" for automation decisions: the Powerwall must get there by the
+ * solar/load crossover (the last moment production still covers the house) —
+ * reaching 100% "by sundown" is impossible, it only ever declines after that.
+ */
+function reaches100ByCrossover(forecast) {
+    return forecast.reaches100 && forecast.solarLoadCrossover !== null &&
+        forecast.fullTime <= forecast.solarLoadCrossover;
+}
+
+/**
+ * The automation's stop decision for a car charging (or predicted to start
+ * charging) at fromTime — port of DecideStop. Returns the Date the automation
+ * would issue charge_stop, or null when it would let the session run.
+ * Decision sims use the potential-solar profile, exactly like the C# side.
+ */
+function decideStopTime(ctx, key, baseOverrides, fromTime) {
+    const base = {
+        usePotentialSolar: true,
+        applyModel3WeekdayStop: baseOverrides.applyModel3WeekdayStop,
+        start: baseOverrides.start || null,
+        stops: Object.assign({}, baseOverrides.stops)
+    };
+    delete base.stops[key];
+
+    const withStop = (t) => Object.assign({}, base, {
+        stops: Object.assign({}, base.stops, { [key]: t })
+    });
+
+    const continueForecast = simulateDay(ctx, base);
+    if (reaches100ByCrossover(continueForecast)) {
+        return null; // the Powerwall still reaches 100% in time with the car charging
+    }
+
+    const stopNowForecast = simulateDay(ctx, withStop(fromTime));
+    if (!reaches100ByCrossover(stopNowForecast)) {
+        // 100% is out of reach either way — the automation stops the car only for
+        // a meaningful peak improvement, and never before solar noon (the
+        // afternoon alone can fill the Powerwall, and a marine-layer morning
+        // makes the weather scale read far darker than the day will be)
+        const improvement = stopNowForecast.peakPercent - continueForecast.peakPercent;
+        if (improvement < CHARGE_AUTOMATION.STOP_MIN_IMPROVEMENT_PERCENT) {
+            return null;
+        }
+        return fromTime < ctx.solarNoon ? new Date(ctx.solarNoon) : new Date(fromTime);
+    }
+
+    // Stopping now still gets the Powerwall to 100% — find the LATEST stop that
+    // does, so the car charges as long as the Powerwall can afford. Stopping
+    // earlier always helps, so the scan ends at the first stop time that fails.
+    let latestSafe = nextSlotBoundary(fromTime);
+    for (let t = new Date(latestSafe.getTime() + 15 * 60 * 1000); t <= ctx.endOfDay;
+         t = new Date(t.getTime() + 15 * 60 * 1000)) {
+        if (!reaches100ByCrossover(simulateDay(ctx, withStop(t)))) break;
+        latestSafe = t;
+    }
+    return latestSafe;
+}
+
+/**
+ * The car the automation could auto-start today — port of PickConnectedVehicle
+ * plus the once-per-day rule: plugged in at home, below its limit, and without
+ * a home charging session earlier today (one that ended below the limit means
+ * someone stopped it on purpose, and the automation never restarts it).
+ */
+function pickStartCandidate(ctx, chargingCar) {
+    const candidates = [];
+    for (const key of ['Model3', 'ModelX']) {
+        if (key === chargingCar) continue;
+        const report = ctx.state[key];
+        if (!report) continue;
+        if (report[key + 'IsPluggedIn'] === false || report[key + 'FastChargerPresent']) continue;
+        // Stale "charging" report — a charging car never sleeps, so this is outdated
+        if (report[key + 'IsCharging'] && report !== ctx.latest) continue;
+        if (ctx.level[key] >= ctx.limit[key]) {
+            // The limit often sits at/below the car's level overnight and is raised
+            // as part of the morning routine — the live automation will see the
+            // raised limit when it re-evaluates, so predict the session with the
+            // usual limit instead of showing no session at all
+            if (ctx.level[key] >= PREDICTION_CONFIG.DEFAULT_EV_CHARGE_LIMIT) continue;
+            ctx.limit[key] = PREDICTION_CONFIG.DEFAULT_EV_CHARGE_LIMIT;
+        }
+        if (hadHomeChargingSessionToday(ctx.dataSource, key, ctx.now)) continue;
+        candidates.push({ key, reported: convertToPDT(report.LocalTimestamp) });
+    }
+    if (candidates.length === 0) return null;
+    // Both cars can only claim the connector when one report is stale — trust the newer one
+    candidates.sort((a, b) => b.reported - a.reported);
+    return candidates[0].key;
+}
+
+/**
+ * True if the car was seen charging at home at any point today. Together with
+ * "currently stopped below its limit" that means a person (or the car's own
+ * schedule) ended the session, and the automation must not restart it.
+ */
+function hadHomeChargingSessionToday(dataSource, key, now) {
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    for (let i = dataSource.length - 1; i >= 0; i--) {
+        const point = dataSource[i];
+        const pointDate = convertToPDT(point.LocalTimestamp);
+        if (pointDate > now) continue;
+        if (pointDate < todayStart) break; // history is chronological
+        if (point[key + 'IsAvailable'] && point[key + 'IsCharging'] && !point[key + 'FastChargerPresent']) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * When would the automation's start trigger fire for this car? Scans a baseline
+ * simulation (no future EV session) for the first slot where the Powerwall is
+ * absorbing (nearly) all the solar it can take — >= HIGH_POWERWALL_CHARGE_KW,
+ * or >= LOW while nearly full — with the forecast reaching 100% and enough
+ * useful solar hours left. Port of EvaluateStartAsync's trigger conditions.
+ * Returns the predicted start Date, or null when it would not fire today.
+ */
+function findAutoStartTime(ctx, key, baseOverrides) {
+    const baseline = simulateDay(ctx, {
+        applyModel3WeekdayStop: baseOverrides.applyModel3WeekdayStop,
+        stops: baseOverrides.stops
+    });
+    if (!reaches100ByCrossover(baseline) || !baseline.lastUsefulSolarEnd) return null;
+
+    for (let i = 0; i < baseline.times.length; i++) {
+        const t = baseline.times[i];
+        const rateKw = baseline.chargeRateKw[i];
+        const nearlyFull = baseline.powerwall[i] >= CHARGE_AUTOMATION.NEARLY_FULL_PERCENT;
+        const solarAboutToBeWasted =
+            rateKw >= CHARGE_AUTOMATION.HIGH_POWERWALL_CHARGE_KW ||
+            (rateKw >= CHARGE_AUTOMATION.LOW_POWERWALL_CHARGE_KW && nearlyFull);
+        if (!solarAboutToBeWasted) continue;
+
+        const solarHoursLeft = (baseline.lastUsefulSolarEnd - t) / (3600 * 1000);
+        if (solarHoursLeft < CHARGE_AUTOMATION.MIN_SOLAR_HOURS_LEFT) continue;
+
+        return t;
+    }
+    return null;
 }
 
 /**
@@ -276,6 +587,73 @@ function buildDailyProfiles(dataSource, now) {
     }
 
     return { solar, load };
+}
+
+/**
+ * Potential solar production per slot, reconstructed from the produced-solar
+ * profile — port of the automation's ToPotentialSolarProfile. The system
+ * curtails production once the Powerwall is full and nothing else wants power,
+ * so on typical days the recorded solar collapses to roughly the house load
+ * from late morning on — but the panels could have produced a full bell curve.
+ * Each slot's potential is the largest production ever recorded at the same or
+ * a greater distance from solar noon. Used by the automation-mirroring decision
+ * sims, where the question is how much energy the Powerwall COULD still absorb.
+ */
+function toPotentialSolarProfile(solarProfile) {
+    let first = -1, last = -1;
+    for (let s = 0; s < solarProfile.length; s++) {
+        if (solarProfile[s] > 0.15) {
+            if (first < 0) first = s;
+            last = s;
+        }
+    }
+    if (first < 0 || last <= first) return solarProfile;
+
+    const solarNoonSlot = (first + last) / 2;
+    const potential = new Array(solarProfile.length).fill(0);
+    for (let s = first; s <= last; s++) {
+        const dist = Math.abs(s - solarNoonSlot);
+        let best = solarProfile[s];
+        for (let m = first; m <= last; m++) {
+            if (Math.abs(m - solarNoonSlot) >= dist) {
+                best = Math.max(best, solarProfile[m]);
+            }
+        }
+        potential[s] = best;
+    }
+    return potential;
+}
+
+/**
+ * Weather scale to apply to the potential-solar profile — port of the
+ * automation's ComputePotentialSolarScale. Today's production is compared
+ * against the MEDIAN profile (typical vs typical), and only where the
+ * comparison means something: slots whose history is itself uncurtailed,
+ * skipping dawn/dusk and today's curtailed samples (Powerwall full, no car
+ * charging, not exporting). With too little evidence the scale stays neutral.
+ */
+function computePotentialSolarScale(todayData, medianProfile, potentialProfile, now) {
+    const windowStart = new Date(now.getTime() - 2 * PREDICTION_CONFIG.SOLAR_SCALE_WINDOW_HOURS * 3600 * 1000);
+    let todaySum = 0;
+    let profileSum = 0;
+    for (const point of todayData) {
+        const pointDate = convertToPDT(point.LocalTimestamp);
+        if (pointDate < windowStart) continue;
+
+        const slot = timeSlotIndex(pointDate);
+        const median = medianProfile[slot];
+        if (median <= 1.0) continue; // dawn/dusk says more about the marine layer than the day
+        if (median < 0.7 * potentialProfile[slot]) continue; // curtailed history — not a weather reference
+
+        const evKw = homeChargingPowerKw(point, 'Model3') + homeChargingPowerKw(point, 'ModelX');
+        const likelyCurtailed = (point.BatteryPercentage || 0) >= 99.5 && evKw < 0.5 && (point.GridPowerKw || 0) > -0.5;
+        if (likelyCurtailed) continue;
+
+        todaySum += point.SolarPowerKw || 0;
+        profileSum += median;
+    }
+    if (profileSum < 3) return 1;
+    return Math.min(1.6, Math.max(0.3, todaySum / profileSum));
 }
 
 /**

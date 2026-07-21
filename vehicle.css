@@ -76,3 +76,57 @@
     .tesla-vehicle.charging .vehicle-battery-percent {
         color: #4caf50;
     }
+
+/* Charger cable indicator (Tesla-app style) */
+.charge-connector {
+    display: none; /* hidden until plugged in */
+    width: 48px;
+    height: 24px;
+    vertical-align: middle;
+}
+
+    .charge-connector svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+        overflow: visible;
+    }
+
+    .charge-connector .connector-cable {
+        stroke: #4caf50;
+    }
+
+    .charge-connector .connector-head {
+        fill: #4caf50;
+    }
+
+    .charge-connector .connector-flow {
+        display: none;
+        stroke: #b9f6ca;
+        stroke-dasharray: 4 14;
+        animation: charge-flow 1s linear infinite;
+    }
+
+    /* Plugged in: show green cable */
+    .charge-connector.plugged {
+        display: inline-block;
+    }
+
+    /* Actively charging: animate energy flowing down the cable */
+    .charge-connector.charging .connector-flow {
+        display: block;
+    }
+
+    .charge-connector.charging .connector-head {
+        animation: charge-glow 1s ease-in-out infinite alternate;
+    }
+
+@keyframes charge-flow {
+    from { stroke-dashoffset: 0; }
+    to { stroke-dashoffset: -18; }
+}
+
+@keyframes charge-glow {
+    from { fill: #4caf50; }
+    to { fill: #b9f6ca; }
+}

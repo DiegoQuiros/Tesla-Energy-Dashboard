@@ -12,13 +12,13 @@ class BatterySimulator {
             Model3: {
                 minAmps: 5,
                 maxAmps: 32,
-                voltage: 249,
+                voltage: SHARED_CONFIG.PREDICTION_CONFIG.WALL_CONNECTOR_VOLTAGE,
                 batteryCapacity: BATTERY_CAPACITIES.MODEL_3
             },
             ModelX: {
                 minAmps: 5,
                 maxAmps: 48, // Model X typically supports higher amperage
-                voltage: 249,
+                voltage: SHARED_CONFIG.PREDICTION_CONFIG.WALL_CONNECTOR_VOLTAGE,
                 batteryCapacity: BATTERY_CAPACITIES.MODEL_X
             }
         };

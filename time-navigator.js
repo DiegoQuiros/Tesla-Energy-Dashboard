@@ -3,7 +3,7 @@ class TimeNavigator {
     constructor() {
         this.selectedTime = null; // null means "current time" (live mode)
         this.isLiveMode = true;
-        this.timeStep = 15; // minutes
+        this.timeStep = DATA_INTERVAL_MINUTES; // minutes, matches the collector cadence
         this.observers = []; // Components that need to be notified of time changes
 
         this.createTimeNavigatorUI();
@@ -20,7 +20,7 @@ class TimeNavigator {
 
         container.innerHTML = `
             <div class="time-navigator-controls">
-                <button id="timeNavBack" class="time-nav-btn" title="Go back 15 minutes">
+                <button id="timeNavBack" class="time-nav-btn" title="Go back ${this.timeStep} minutes">
                     <span>⏪</span>
                 </button>
                 <button id="timeNavBackFast" class="time-nav-btn" title="Go back 1 hour">
@@ -33,26 +33,22 @@ class TimeNavigator {
                 <button id="timeNavForwardFast" class="time-nav-btn" title="Go forward 1 hour">
                     <span>⏭️</span>
                 </button>
-                <button id="timeNavForward" class="time-nav-btn" title="Go forward 15 minutes">
+                <button id="timeNavForward" class="time-nav-btn" title="Go forward ${this.timeStep} minutes">
                     <span>⏩</span>
                 </button>
                 <button id="timeNavLive" class="time-nav-btn live-btn" title="Return to live mode">
                     <span>🔴 LIVE</span>
                 </button>
-            </div>
-            <div class="calendar-picker-container">
-                <label for="datePickerInput" class="calendar-label">Jump to date:</label>
-                <input type="date" id="datePickerInput" class="calendar-date-input" title="Select a date before today">
+                <div class="calendar-picker-container">
+                    <label for="datePickerInput" class="calendar-label">Jump to date:</label>
+                    <input type="date" id="datePickerInput" class="calendar-date-input" title="Select a date before today">
+                </div>
             </div>
         `;
 
-        // Insert after the header
-        const header = document.querySelector('.header');
-        if (header) {
-            header.parentNode.insertBefore(container, header.nextSibling);
-        } else {
-            document.body.insertBefore(container, document.body.firstChild);
-        }
+        // Insert at the top of the page container so position:sticky spans the whole page
+        const pageContainer = document.querySelector('.container') || document.body;
+        pageContainer.insertBefore(container, pageContainer.firstChild);
     }
 
     bindEvents() {

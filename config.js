@@ -12,9 +12,8 @@ let energyCreationChart = null;
 let energyUsageChart = null;
 let lastDataTimestamp = null; // Store the timestamp of the last data update
 
-// Battery capacities in kWh
-const BATTERY_CAPACITIES = {
-    MODEL_3: 52.4, // kWh - Model 3 Standard Range Plus
-    MODEL_X: 100, // kWh - Model X
-    POWERWALL: 13.5 // kWh - Tesla Powerwall
-};
+// Battery capacities in kWh — single source of truth in shared-config.js
+const BATTERY_CAPACITIES = SHARED_CONFIG.BATTERY_CAPACITIES;
+
+// Collector sampling cadence (minutes) — single source of truth in shared-config.js
+const DATA_INTERVAL_MINUTES = SHARED_CONFIG.DATA_INTERVAL_MINUTES;
