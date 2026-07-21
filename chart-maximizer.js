@@ -32,6 +32,12 @@ class ChartMaximizer {
             dailySolarBtn.addEventListener('click', () => this.toggleMaximize('dailySolarChartContainer', 'dailySolarChart'));
         }
 
+        // HVAC Chart
+        const hvacBtn = document.getElementById('hvacMaximizeBtn');
+        if (hvacBtn) {
+            hvacBtn.addEventListener('click', () => this.toggleMaximize('hvacChartContainer', 'hvacChart'));
+        }
+
         // Handle ESC key to minimize
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && this.maximizedChart) {
@@ -138,6 +144,12 @@ class ChartMaximizer {
                 break;
             case 'batteryChart':
                 chart = batteryChart;
+                break;
+            case 'dailySolarChart':
+                chart = dailySolarChart;
+                break;
+            case 'hvacChart':
+                chart = hvacChart;
                 break;
         }
 

@@ -20,6 +20,7 @@ function createCharts() {
     console.log(`Creating charts with ${todayData.length} today's data points`);
 
     createDailySolarChart();
+    createHvacChart();
 
     if (todayData.length === 0) {
         console.warn('No data for today to display in charts');
@@ -317,6 +318,196 @@ function createTemperatureChart(todayData) {
             }
         }
     });
+}
+
+// Heat-pump / HVAC chart: indoor temp + heat/cool setpoints across the day (12am–11:59pm),
+// with outdoor temp for context. Reads Bryant thermostat fields written by the collector.
+function createHvacChart() {
+    const canvas = document.getElementById('hvacChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    if (hvacChart) {
+        hvacChart.destroy();
+    }
+
+    // Resolve the current time context (live vs. history scrubbing)
+    let currentTime, dataSource;
+    if (window.timeNavigator && !window.timeNavigator.isInLiveMode()) {
+        currentTime = window.timeNavigator.getCurrentTime();
+        dataSource = window.timeNavigator.getFilteredData();
+    } else {
+        currentTime = new Date();
+        dataSource = energyData;
+    }
+
+    const dayStart = new Date(currentTime);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(currentTime);
+    dayEnd.setHours(23, 59, 59, 999);
+
+    const dayData = sliceDataRange(dataSource || [], dayStart, dayEnd);
+
+    // Thin to the collector's sampling cadence, matching the other day charts
+    const filteredData = dayData.filter((point, index) => {
+        if (index === 0) return true;
+        return convertToPDT(point.LocalTimestamp).getMinutes() % DATA_INTERVAL_MINUTES === 0;
+    });
+
+    const timeLabels = filteredData.map(point =>
+        convertToPDT(point.LocalTimestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+    );
+
+    const pos = (v) => (typeof v === 'number' && v > 0) ? v : null;
+    const indoorTemps = filteredData.map(p => pos(p.ThermostatCurrentTempF));
+    const heatSetpoints = filteredData.map(p => pos(p.ThermostatHeatSetpointF));
+    const coolSetpoints = filteredData.map(p => pos(p.ThermostatCoolSetpointF));
+    // Prefer the heat pump's own outdoor sensor; fall back to the weather feed
+    const outdoorTemps = filteredData.map(p =>
+        pos(p.ThermostatOutdoorTempF) ??
+        ((p.WeatherTemperatureF && p.WeatherTemperatureF > -50) ? p.WeatherTemperatureF : null)
+    );
+
+    updateHvacStats(filteredData, dayData);
+
+    const datasets = [
+        {
+            label: 'Cool Setpoint',
+            data: coolSetpoints,
+            borderColor: '#42a5f5',
+            backgroundColor: 'rgba(66, 165, 245, 0.08)',
+            borderWidth: 2,
+            stepped: true,
+            pointRadius: 0,
+            spanGaps: true
+        },
+        {
+            label: 'Heat Setpoint',
+            data: heatSetpoints,
+            borderColor: '#ff7043',
+            backgroundColor: 'rgba(255, 112, 67, 0.08)',
+            borderWidth: 2,
+            stepped: true,
+            pointRadius: 0,
+            spanGaps: true
+        },
+        {
+            label: 'Indoor Temperature',
+            data: indoorTemps,
+            borderColor: '#26c6da',
+            backgroundColor: 'rgba(38, 198, 218, 0.1)',
+            tension: 0.4,
+            borderWidth: 3,
+            pointRadius: 2,
+            pointBackgroundColor: '#26c6da',
+            spanGaps: true
+        },
+        {
+            label: 'Outdoor Temperature',
+            data: outdoorTemps,
+            borderColor: '#ffcc00',
+            backgroundColor: 'rgba(255, 204, 0, 0.05)',
+            tension: 0.4,
+            borderWidth: 2,
+            borderDash: [5, 4],
+            pointRadius: 0,
+            spanGaps: true
+        }
+    ];
+
+    hvacChart = new Chart(ctx, {
+        type: 'line',
+        data: { labels: timeLabels, datasets: datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: chartAnimation(),
+            plugins: {
+                legend: { labels: { color: '#ffffff' } }
+            },
+            scales: {
+                x: {
+                    ticks: { color: '#888', maxTicksLimit: 12 },
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                },
+                y: {
+                    ticks: {
+                        color: '#888',
+                        callback: function (value) { return value + '°F'; }
+                    },
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                }
+            }
+        }
+    });
+}
+
+// Populate the HVAC stat grid and header summary from the most recent thermostat reading
+function updateHvacStats(filteredData, dayData) {
+    const set = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value;
+    };
+    const statsEl = document.getElementById('hvacStats');
+    const summaryEl = document.getElementById('hvacSummary');
+
+    // Latest online reading of the day, else the most recent reading overall
+    const source = dayData && dayData.length ? dayData : [];
+    let latest = null;
+    for (let i = source.length - 1; i >= 0; i--) {
+        if (source[i].ThermostatIsOnline) { latest = source[i]; break; }
+    }
+    if (!latest && source.length) latest = source[source.length - 1];
+
+    const online = !!(latest && latest.ThermostatIsOnline);
+    if (statsEl) statsEl.classList.toggle('hvac-offline', !online);
+
+    if (!online) {
+        ['hvacMode', 'hvacStatus', 'hvacIndoor', 'hvacHumidity', 'hvacOutdoor', 'hvacHeatSet',
+            'hvacCoolSet', 'hvacFan', 'hvacHold', 'hvacAirflow', 'hvacFilter', 'hvacCoolingKwh',
+            'hvacHpHeatKwh', 'hvacFanKwh', 'hvacEfficiency'].forEach(id => set(id, '--'));
+        if (summaryEl) summaryEl.textContent = latest ? 'Offline' : 'No data';
+        return;
+    }
+
+    const temp = (v) => (typeof v === 'number' && v > 0) ? `${Math.round(v)}°F` : '--';
+    const kwh = (v) => (typeof v === 'number') ? `${v.toFixed(1)} kWh` : '--';
+    const num = (v, suffix) => (typeof v === 'number' && v > 0) ? `${Math.round(v)}${suffix}` : '--';
+
+    const titleCase = (s) => (typeof s === 'string' && s.length)
+        ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+    const mode = latest.ThermostatMode || latest.ThermostatSystemModeRaw || '--';
+    const status = titleCase(latest.ThermostatConditioning || latest.ThermostatActivity ||
+        latest.ThermostatStatus || (latest.ThermostatIsActivelyRunning ? 'Running' : 'Idle'));
+
+    set('hvacMode', mode);
+    set('hvacStatus', status);
+    set('hvacIndoor', temp(latest.ThermostatCurrentTempF));
+    set('hvacHumidity', num(latest.ThermostatHumidity, '%'));
+    set('hvacOutdoor', temp(latest.ThermostatOutdoorTempF ||
+        (latest.WeatherTemperatureF > -50 ? latest.WeatherTemperatureF : 0)));
+    set('hvacHeatSet', temp(latest.ThermostatHeatSetpointF));
+    set('hvacCoolSet', temp(latest.ThermostatCoolSetpointF));
+    set('hvacFan', latest.ThermostatFanMode || '--');
+    set('hvacHold', latest.ThermostatHoldActive ? 'On' : 'Off');
+    set('hvacAirflow', num(latest.ThermostatAirflowCfm, ' CFM'));
+    set('hvacFilter', num(latest.ThermostatFilterLevelPercent, '%'));
+    set('hvacCoolingKwh', kwh(latest.ThermostatCoolingKwhToday));
+    set('hvacHpHeatKwh', kwh(latest.ThermostatHpHeatKwhToday));
+    set('hvacFanKwh', kwh(latest.ThermostatFanKwhToday));
+
+    const rating = (v) => (typeof v === 'number' && v > 0)
+        ? (Math.round(v * 10) / 10).toString() : '--';
+    set('hvacEfficiency', `${rating(latest.ThermostatSeer)} / ${rating(latest.ThermostatHspf)}`);
+
+    if (summaryEl) {
+        const zone = latest.ThermostatZoneName ? `${latest.ThermostatZoneName}: ` : '';
+        const setpoint = /cool/i.test(mode) ? latest.ThermostatCoolSetpointF
+            : /heat/i.test(mode) ? latest.ThermostatHeatSetpointF
+                : latest.ThermostatTargetTempF;
+        summaryEl.textContent =
+            `${zone}${temp(latest.ThermostatCurrentTempF)} → ${temp(setpoint)} (${mode})`;
+    }
 }
 
 function createSolarChart(todayData) {

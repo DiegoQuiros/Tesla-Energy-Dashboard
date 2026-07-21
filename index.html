@@ -65,6 +65,7 @@
                                                 <div class="battery-bar-container">
                                                     <div class="battery-bar gradient-bar">
                                                         <div class="battery-fill" id="model3Bar" style="width: 0%"></div>
+                                                        <div class="charge-limit-marker" id="model3Limit"></div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -106,6 +107,7 @@
                                                 <div class="battery-bar-container">
                                                     <div class="battery-bar gradient-bar">
                                                         <div class="battery-fill" id="modelXBar" style="width: 0%"></div>
+                                                        <div class="charge-limit-marker" id="modelXLimit"></div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -209,6 +211,52 @@
                     </div>
                 </div>
 
+                <!-- Daily Solar Production Chart -->
+                <div class="chart-container" id="dailySolarChartContainer">
+                    <h3>
+                        📊 Daily Solar Production (Last 12 Months)
+                        <div class="chart-buttons">
+                            <button class="collapse-btn" id="dailySolarCollapseBtn" title="Collapse chart">Collapse</button>
+                            <button class="maximize-btn" id="dailySolarMaximizeBtn">Maximize</button>
+                        </div>
+                    </h3>
+                    <div class="chart-wrapper">
+                        <canvas id="dailySolarChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Heat Pump / HVAC Card -->
+                <div class="chart-container" id="hvacChartContainer">
+                    <h3>
+                        🔥 Heat Pump / HVAC
+                        <span class="solar-kwh-stats" id="hvacSummary"></span>
+                        <div class="chart-buttons">
+                            <button class="collapse-btn" id="hvacCollapseBtn" title="Collapse chart">Collapse</button>
+                            <button class="maximize-btn" id="hvacMaximizeBtn">Maximize</button>
+                        </div>
+                    </h3>
+                    <div class="hvac-stats" id="hvacStats">
+                        <div class="hvac-stat"><span class="hvac-stat-label">Mode</span><span class="hvac-stat-value" id="hvacMode">--</span></div>
+                        <div class="hvac-stat"><span class="hvac-stat-label">Status</span><span class="hvac-stat-value" id="hvacStatus">--</span></div>
+                        <div class="hvac-stat"><span class="hvac-stat-label">Indoor</span><span class="hvac-stat-value" id="hvacIndoor">--</span></div>
+                        <div class="hvac-stat"><span class="hvac-stat-label">Humidity</span><span class="hvac-stat-value" id="hvacHumidity">--</span></div>
+                        <div class="hvac-stat"><span class="hvac-stat-label">Outdoor</span><span class="hvac-stat-value" id="hvacOutdoor">--</span></div>
+                        <div class="hvac-stat"><span class="hvac-stat-label">Heat Set</span><span class="hvac-stat-value" id="hvacHeatSet">--</span></div>
+                        <div class="hvac-stat"><span class="hvac-stat-label">Cool Set</span><span class="hvac-stat-value" id="hvacCoolSet">--</span></div>
+                        <div class="hvac-stat"><span class="hvac-stat-label">Fan</span><span class="hvac-stat-value" id="hvacFan">--</span></div>
+                        <div class="hvac-stat"><span class="hvac-stat-label">Hold</span><span class="hvac-stat-value" id="hvacHold">--</span></div>
+                        <div class="hvac-stat"><span class="hvac-stat-label">Airflow</span><span class="hvac-stat-value" id="hvacAirflow">--</span></div>
+                        <div class="hvac-stat"><span class="hvac-stat-label">Filter</span><span class="hvac-stat-value" id="hvacFilter">--</span></div>
+                        <div class="hvac-stat"><span class="hvac-stat-label">Cooling Today</span><span class="hvac-stat-value" id="hvacCoolingKwh">--</span></div>
+                        <div class="hvac-stat"><span class="hvac-stat-label">HP Heat Today</span><span class="hvac-stat-value" id="hvacHpHeatKwh">--</span></div>
+                        <div class="hvac-stat"><span class="hvac-stat-label">Fan Today</span><span class="hvac-stat-value" id="hvacFanKwh">--</span></div>
+                        <div class="hvac-stat"><span class="hvac-stat-label">SEER / HSPF</span><span class="hvac-stat-value" id="hvacEfficiency">--</span></div>
+                    </div>
+                    <div class="chart-wrapper">
+                        <canvas id="hvacChart"></canvas>
+                    </div>
+                </div>
+
                 <!-- Temperature Comparison Chart -->
                 <div class="chart-container" id="temperatureChartContainer">
                     <h3>
@@ -237,20 +285,6 @@
                     </div>
                     <div id="weatherForecast">
                         <div style="color: #b0c4de;">Loading 16-day forecast…</div>
-                    </div>
-                </div>
-
-                <!-- Daily Solar Production Chart -->
-                <div class="chart-container" id="dailySolarChartContainer">
-                    <h3>
-                        📊 Daily Solar Production (Last 12 Months)
-                        <div class="chart-buttons">
-                            <button class="collapse-btn" id="dailySolarCollapseBtn" title="Collapse chart">Collapse</button>
-                            <button class="maximize-btn" id="dailySolarMaximizeBtn">Maximize</button>
-                        </div>
-                    </h3>
-                    <div class="chart-wrapper">
-                        <canvas id="dailySolarChart"></canvas>
                     </div>
                 </div>
             </div>

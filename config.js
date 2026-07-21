@@ -8,6 +8,7 @@ let solarChart = null;
 let batteryChart = null;
 let temperatureChart = null;
 let dailySolarChart = null;
+let hvacChart = null;
 let energyCreationChart = null;
 let energyUsageChart = null;
 let lastDataTimestamp = null; // Store the timestamp of the last data update

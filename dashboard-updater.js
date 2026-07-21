@@ -162,6 +162,7 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
     const percentElement = document.getElementById(`${cardPrefix}Percent`);
     const kwhElement = document.getElementById(`${cardPrefix}Kwh`);
     const barElement = document.getElementById(`${cardPrefix}Bar`);
+    const limitElement = document.getElementById(`${cardPrefix}Limit`);
     const statusElement = document.getElementById(`${cardPrefix}Status`);
     const rangeElement = document.getElementById(`${cardPrefix}Range`);
     const chargingRateElement = document.getElementById(`${cardPrefix}ChargingRate`);
@@ -199,6 +200,17 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
         percentElement.textContent = `${batteryPercent}%`;
         kwhElement.textContent = `${calculateBatteryKwh(batteryPercent, batteryCapacity)} kWh`;
         barElement.style.width = `${batteryPercent}%`;
+
+        if (limitElement) {
+            const chargeLimit = dataToUse[`${vehiclePrefix}ChargeLimit`] || 0;
+            if (chargeLimit > 0) {
+                limitElement.style.left = `${chargeLimit}%`;
+                limitElement.style.display = 'block';
+                limitElement.title = `Charge limit: ${chargeLimit}%`;
+            } else {
+                limitElement.style.display = 'none';
+            }
+        }
 
         if (latest[`${vehiclePrefix}IsAvailable`]) {
             statusElement.textContent = dataToUse[`${vehiclePrefix}ChargingState`] || 'Unknown';

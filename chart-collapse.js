@@ -29,6 +29,11 @@ class ChartCollapser {
         if (dailySolarBtn) {
             dailySolarBtn.addEventListener('click', () => this.toggleCollapse('dailySolarChartContainer'));
         }
+
+        const hvacBtn = document.getElementById('hvacCollapseBtn');
+        if (hvacBtn) {
+            hvacBtn.addEventListener('click', () => this.toggleCollapse('hvacChartContainer'));
+        }
     }
 
     toggleCollapse(containerId) {
@@ -120,6 +125,12 @@ class ChartCollapser {
                 break;
             case 'batteryChart':
                 chart = batteryChart;
+                break;
+            case 'dailySolarChart':
+                chart = dailySolarChart;
+                break;
+            case 'hvacChart':
+                chart = hvacChart;
                 break;
         }
 

@@ -114,6 +114,56 @@ body {
     transition: width 0.3s ease;
 }
 
+/* Vertical marker showing the configured charge limit */
+.charge-limit-marker {
+    position: absolute;
+    top: -1px;
+    bottom: -1px;
+    width: 2px;
+    background: #fff;
+    box-shadow: 0 0 3px rgba(0, 0, 0, 0.9);
+    transform: translateX(-1px);
+    transition: left 0.3s ease;
+    display: none;
+    z-index: 2;
+    pointer-events: none;
+}
+
+/* HVAC / heat-pump stat grid */
+.hvac-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+    margin: 12px 0 4px;
+}
+
+.hvac-stat {
+    display: flex;
+    flex-direction: column;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 6px 10px;
+}
+
+.hvac-stat-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #8a9bb5;
+}
+
+.hvac-stat-value {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #fff;
+    margin-top: 2px;
+}
+
+.hvac-stats.hvac-offline {
+    opacity: 0.5;
+}
+
 .weather-card {
     background: linear-gradient(145deg, #2a3d66, #1a2744);
 }
