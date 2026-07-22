@@ -19,7 +19,7 @@ const SHARED_CONFIG = {
     // Prediction tuning constants (validated by backtest against ~80 days of
     // collected data). Used by prediction-generator.js for the "Battery Levels
     // Today" chart and by ChargeAutomationManager.cs, whose C# port of that
-    // prediction decides the once-per-day solar-surplus charge trigger.
+    // prediction decides the solar-surplus charge start/stop triggers.
     "PREDICTION_CONFIG": {
         "PROFILE_DAYS": 7,              // prior days used to build solar/load profiles
         "SLOTS_PER_DAY": 96,            // 15-minute slots in a day
@@ -31,18 +31,37 @@ const SHARED_CONFIG = {
         "MIN_EV_CHARGE_KW": 1.2,        // below ~5A the car won't charge at all
         "DEFAULT_EV_CHARGE_LIMIT": 85,  // cars normally charge to 85% (raised from 80% on 2026-07-20)
         "DEFAULT_WALL_CONNECTOR_KW": 6, // fallback wall connector power (24A x 249V)
-        "WALL_CONNECTOR_VOLTAGE": 249   // home wall connector voltage, for amps -> kW conversion
+        "WALL_CONNECTOR_VOLTAGE": 249,  // home wall connector voltage, for amps -> kW conversion
+
+        // Afternoon delivery factor for the "potential solar" profile the
+        // charge-automation STOP side uses (toPotentialSolarProfile). That profile
+        // mirrors the strong morning ramp onto the afternoon, but the panels deliver
+        // less after solar noon (orientation/temperature asymmetry). Backtesting a
+        // full year of afternoon-charging days (where the car keeps solar uncurtailed,
+        // so measured solar IS the deliverable amount) showed the raw potential runs
+        // ~1.3x actual across the afternoon — roughly constant, not growing — which
+        // let the STOP side's latest-safe time slide too late and miss 100% (the
+        // 2026-07-21 incident: stopped 5:45 PM, only reached 93%). Scale post-solar-
+        // noon potential by AFTERNOON_FACTOR, ramped in linearly over the first
+        // RAMP_HOURS past noon (no cliff at noon):
+        //   factor = 1 - (1 - AFTERNOON_FACTOR) * min(1, hoursPastSolarNoon / RAMP_HOURS)
+        // 0.80 centers the deliverable-solar estimate (~1.0x, a hair optimistic in the
+        // 3-5 PM decision window) so the stop lands at the true latest-safe moment —
+        // later than a cautious manual stop when the day allows, without missing 100%.
+        "POTENTIAL_AFTERNOON_FACTOR": 0.80,     // fraction of the mirrored-morning envelope the panels deliver post-noon
+        "POTENTIAL_AFTERNOON_RAMP_HOURS": 1.0   // hours past solar noon to ramp from 1.0 down to AFTERNOON_FACTOR
     },
 
     // Solar-surplus charge automation thresholds. Used by
-    // ChargeAutomationManager.cs to decide the once-per-day start/stop commands,
-    // and by prediction-generator.js to mirror those decisions in the "Battery
+    // ChargeAutomationManager.cs to decide the start/stop commands, and by
+    // prediction-generator.js to mirror those decisions in the "Battery
     // Levels Today" forecast so the chart shows what the automation will do.
     "CHARGE_AUTOMATION": {
         "HIGH_POWERWALL_CHARGE_KW": 4.8,       // Powerwall absorbing (nearly) all it can -> solar about to be wasted
         "LOW_POWERWALL_CHARGE_KW": 1.5,        // lower trigger bar when the Powerwall is nearly full
         "NEARLY_FULL_PERCENT": 95,             // "nearly full" for the low trigger bar
         "MIN_SOLAR_HOURS_LEFT": 3.0,           // don't start a charge without this much useful solar left
-        "STOP_MIN_IMPROVEMENT_PERCENT": 2.0    // don't interrupt a charge for less predicted Powerwall gain than this
+        "STOP_MIN_IMPROVEMENT_PERCENT": 2.0,   // don't interrupt a charge for less predicted Powerwall gain than this
+        "ACTION_COOLDOWN_HOURS": 2.0           // a car's auto-start/auto-stop may repeat after this long (was once per day)
     }
 };

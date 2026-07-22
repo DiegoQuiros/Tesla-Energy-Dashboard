@@ -1,6 +1,7 @@
 // Configuration - Update this URL to your Azure Blob Storage public URL
 const AZURE_BLOB_URL = 'https://powermanagestorage.blob.core.windows.net/energy-data/energy-data.json';
 const DAILY_SUMMARY_URL = 'https://powermanagestorage.blob.core.windows.net/energy-data/daily-summary.json';
+const CHARGE_AUTOMATION_STATE_URL = 'https://powermanagestorage.blob.core.windows.net/energy-data/charge-automation-state.json';
 
 let energyData = [];
 let dailySummaryData = []; // Per-day kWh totals maintained by the collector job

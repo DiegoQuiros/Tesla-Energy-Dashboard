@@ -24,6 +24,9 @@ function createCharts() {
 
     if (todayData.length === 0) {
         console.warn('No data for today to display in charts');
+        // No battery chart is built on this path, so clear any warning banner
+        // left over from a previous render (e.g. stepping back to an empty day)
+        updateBatteryAutomationBanner(null);
         return;
     }
 
@@ -949,16 +952,177 @@ const autoChargeMarkersPlugin = {
     }
 };
 
+// House load excluding car charging (kW). LoadPowerKw is the whole-home draw
+// measured at the Powerwall gateway, so it already includes the heat pump; we
+// subtract only the cars' charger power. Implausible charger readings (e.g. a
+// Supercharger session away from home reporting >20 kW) are ignored so they
+// don't wrongly deflate the house load.
+function houseLoadExcludingCars(point) {
+    const load = Math.max(0, point.LoadPowerKw || 0);
+    let cars = 0;
+    const m3 = point.Model3ChargerPowerKw || 0;
+    const mx = point.ModelXChargerPowerKw || 0;
+    if (point.Model3IsCharging && m3 > 0 && m3 <= 20) cars += m3;
+    if (point.ModelXIsCharging && mx > 0 && mx <= 20) cars += mx;
+    return Math.max(0, load - cars);
+}
+
+// Finds the evening "crossover": the last time in the day solar production
+// falls to equal the house load (heat pump included, cars excluded), after
+// which solar can no longer cover the house. Combines today's actual data with
+// the rest-of-day prediction so the marker works whether the crossover has
+// already happened or is still ahead. Returns { chartIndex, time } (chartIndex
+// may be fractional, interpolated between samples) or null if there is no such
+// crossover (e.g. solar never exceeds the house load).
+function computeSolarLoadCrossover(todayData, predictions, actualDataCount) {
+    const solar = [];
+    const load = [];
+    const times = [];
+
+    // Actual, measured portion of the day
+    todayData.forEach(p => {
+        solar.push(Math.max(0, p.SolarPowerKw || 0));
+        load.push(houseLoadExcludingCars(p));
+        times.push(convertToPDT(p.LocalTimestamp));
+    });
+
+    // Predicted remainder (aligned with the prediction datasets on the x-axis)
+    const predSolar = predictions.solar || [];
+    const predLoad = predictions.houseLoad || [];
+    const predTimes = predictions.times || [];
+    for (let j = 0; j < predSolar.length; j++) {
+        solar.push(predSolar[j]);
+        load.push(predLoad[j]);
+        times.push(predTimes[j] || null);
+    }
+
+    // Walk the day and keep the LAST surplus->deficit transition (the evening
+    // crossover). Morning ramp-ups are deficit->surplus and are skipped.
+    let result = null;
+    for (let i = 0; i < solar.length - 1; i++) {
+        if (solar[i] == null || load[i] == null || solar[i + 1] == null || load[i + 1] == null) continue;
+        const d0 = solar[i] - load[i];
+        const d1 = solar[i + 1] - load[i + 1];
+        if (d0 >= 0 && d1 < 0) {
+            const frac = d0 / (d0 - d1); // 0..1 where solar meets load between i and i+1
+            const chartIndex = i + frac;
+            let time = null;
+            if (times[i] && times[i + 1]) {
+                time = new Date(times[i].getTime() + frac * (times[i + 1].getTime() - times[i].getTime()));
+            } else {
+                time = times[i] || times[i + 1];
+            }
+            result = { chartIndex, time };
+        }
+    }
+    return result;
+}
+
+// Vertical marker at the evening solar/house-load crossover (see
+// computeSolarLoadCrossover). Drawn as an amber line with a sun label.
+const solarCrossoverPlugin = {
+    id: 'solarCrossover',
+    afterDatasetsDraw(chart) {
+        const cfg = chart.options.plugins.solarCrossover;
+        const marker = cfg && cfg.marker;
+        if (!marker) return;
+        const { ctx, chartArea, scales } = chart;
+
+        // Interpolate the pixel X for a possibly-fractional category index
+        const i0 = Math.floor(marker.chartIndex);
+        const x0 = scales.x.getPixelForValue(i0);
+        const x1 = scales.x.getPixelForValue(i0 + 1);
+        const x = x0 + (marker.chartIndex - i0) * (x1 - x0);
+        if (x < chartArea.left || x > chartArea.right) return;
+
+        const color = '#ffcc33';
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.setLineDash([2, 3]);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, chartArea.top);
+        ctx.lineTo(x, chartArea.bottom);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        const timeText = marker.time
+            ? marker.time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+            : '';
+        const label = `☀︎ = 🏠 ${timeText}`;
+        ctx.font = '11px sans-serif';
+        const width = ctx.measureText(label).width;
+        let textX = x + 5;
+        if (textX + width > chartArea.right) textX = x - width - 5;
+        const textY = chartArea.bottom - 8;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+        ctx.fillRect(textX - 3, textY - 11, width + 6, 15);
+        ctx.fillStyle = color;
+        ctx.fillText(label, textX, textY);
+        ctx.restore();
+    }
+};
+
+// Charge-automation health warning shown INSIDE the battery chart (a charge_stop
+// that failed or is blocked by its cooldown needs manual action). Rendered as an
+// overlay pinned to the top of the chart's plot area so it reads as part of the
+// chart, not a separate box above it. pointer-events:none keeps the legend and
+// canvas underneath clickable. warning = { severity, message } or null to hide.
+function updateBatteryAutomationBanner(warning) {
+    const wrapper = document.querySelector('#batteryChartContainer .chart-wrapper');
+    if (!wrapper) return;
+    let banner = document.getElementById('batteryAutomationWarning');
+    if (!warning) {
+        if (banner) banner.remove();
+        return;
+    }
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'batteryAutomationWarning';
+    }
+    // Keep it inside the chart wrapper even if the chart was rebuilt/moved
+    if (banner.parentElement !== wrapper) wrapper.appendChild(banner);
+    banner.className = 'automation-warning ' +
+        (warning.severity === 'critical' ? 'automation-warning-critical' : 'automation-warning-caution');
+    banner.textContent = '⚠️ ' + warning.message;
+}
+
+// Remembers the user's show/hide selection per line across chart rebuilds
+// (mode switches and periodic refreshes destroy and recreate the chart).
+// Keyed by a stable identity ("today:Powerwall", "yesterday:Model 3", ...).
+const batteryDayVisibility = {};
+
+// Stable visibility key for a battery dataset, independent of transient label
+// suffixes like " (Yesterday)" / " (Simulated)". Predictions share their
+// parent line's key so they restore together.
+function batteryVisKey(ds) {
+    if (ds.dayGroup === 'yesterday') {
+        return 'yesterday:' + ds.label.replace(' (Yesterday)', '');
+    }
+    const base = (ds.predictionFor || ds.label).replace(' (Simulated)', '');
+    return 'today:' + base;
+}
+
 function createBatteryChart(todayData) {
     const ctx = document.getElementById('batteryChart').getContext('2d');
 
-    // Destroy existing chart
+    // Destroy existing chart, but first remember which lines are shown/hidden
+    // so the selection survives the rebuild.
     if (batteryChart) {
+        batteryChart.data.datasets.forEach((ds, i) => {
+            if (ds.visKey) batteryDayVisibility[ds.visKey] = batteryChart.isDatasetVisible(i);
+        });
         batteryChart.destroy();
     }
 
-    // Get yesterday's data
-    const yesterday = new Date();
+    // Anchor "today"/"yesterday" to the time being viewed so Historical mode
+    // shows the selected day minus one, not always the real calendar yesterday.
+    const currentTime = (window.timeNavigator && !window.timeNavigator.isInLiveMode())
+        ? window.timeNavigator.getCurrentTime()
+        : new Date();
+
+    // Get yesterday's data (relative to the viewed day)
+    const yesterday = new Date(currentTime);
     yesterday.setDate(yesterday.getDate() - 1);
     yesterday.setHours(0, 0, 0, 0);
     const endOfYesterday = new Date(yesterday);
@@ -980,7 +1144,7 @@ function createBatteryChart(todayData) {
         let lastKnownTimestamp = null;
 
         // First, find the last datapoint before the dataSet to establish starting level
-        const dataSetStart = new Date();
+        const dataSetStart = new Date(currentTime);
         if (dataSet === todayData) {
             dataSetStart.setHours(0, 0, 0, 0);
         } else {
@@ -1054,9 +1218,11 @@ function createBatteryChart(todayData) {
     const isSimulationActive = window.batterySimulator && window.batterySimulator.isSimulationActive();
 
     const datasets = [
-        // Yesterday's Powerwall data (darker shade)
+        // Yesterday's Powerwall data (darker shade) - hidden by default
         {
             label: 'Powerwall (Yesterday)',
+            dayGroup: 'yesterday',
+            hidden: true,
             data: powerwallYesterdayData,
             borderColor: '#006600', // Darker shade of green
             backgroundColor: 'rgba(0, 102, 0, 0.05)',
@@ -1069,6 +1235,7 @@ function createBatteryChart(todayData) {
         // Actual Powerwall data
         {
             label: 'Powerwall',
+            dayGroup: 'today',
             data: powerwallData,
             borderColor: '#00cc00',
             backgroundColor: 'rgba(0, 204, 0, 0.1)',
@@ -1081,6 +1248,7 @@ function createBatteryChart(todayData) {
         // Predicted Powerwall data (no legend)
         {
             label: '',
+            dayGroup: 'today',
             predictionFor: 'Powerwall',
             data: Array(actualDataCount).fill(null).concat(predictions.powerwall),
             borderColor: 'transparent', // No connecting lines
@@ -1097,6 +1265,8 @@ function createBatteryChart(todayData) {
     if (model3YesterdayResult.lastKnownLevel !== null) {
         datasets.push({
             label: 'Model 3 (Yesterday)',
+            dayGroup: 'yesterday',
+            hidden: true,
             data: model3YesterdayResult.data,
             borderColor: '#aa2222', // Darker shade of red
             backgroundColor: 'rgba(170, 34, 34, 0.05)',
@@ -1117,6 +1287,7 @@ function createBatteryChart(todayData) {
 
         datasets.push({
             label: model3Label,
+            dayGroup: 'today',
             data: model3Result.data,
             borderColor: model3BorderColor,
             backgroundColor: model3BackgroundColor,
@@ -1135,6 +1306,7 @@ function createBatteryChart(todayData) {
 
             datasets.push({
                 label: '',
+                dayGroup: 'today',
                 predictionFor: model3Label,
                 data: Array(actualDataCount).fill(null).concat(predictions.model3),
                 borderColor: 'transparent',
@@ -1152,6 +1324,8 @@ function createBatteryChart(todayData) {
     if (modelXYesterdayResult.lastKnownLevel !== null) {
         datasets.push({
             label: 'Model X (Yesterday)',
+            dayGroup: 'yesterday',
+            hidden: true,
             data: modelXYesterdayResult.data,
             borderColor: '#223377', // Darker shade of blue
             backgroundColor: 'rgba(34, 51, 119, 0.05)',
@@ -1172,6 +1346,7 @@ function createBatteryChart(todayData) {
 
         datasets.push({
             label: modelXLabel,
+            dayGroup: 'today',
             data: modelXResult.data,
             borderColor: modelXBorderColor,
             backgroundColor: modelXBackgroundColor,
@@ -1190,6 +1365,7 @@ function createBatteryChart(todayData) {
 
             datasets.push({
                 label: '',
+                dayGroup: 'today',
                 predictionFor: modelXLabel,
                 data: Array(actualDataCount).fill(null).concat(predictions.modelX),
                 borderColor: 'transparent',
@@ -1203,6 +1379,16 @@ function createBatteryChart(todayData) {
         }
     }
 
+    // Restore the user's remembered show/hide selection. Defaults (yesterday
+    // hidden, today shown) apply only until the user first toggles something.
+    datasets.forEach(ds => {
+        ds.visKey = batteryVisKey(ds);
+        const saved = batteryDayVisibility[ds.visKey];
+        if (saved !== undefined) {
+            ds.hidden = !saved;
+        }
+    });
+
     // Vertical markers where the automation is predicted to start/stop a car.
     // Prediction indices sit after today's actual points on the category axis.
     const markerEvents = (predictions.events || []).map(event => {
@@ -1215,9 +1401,15 @@ function createBatteryChart(todayData) {
         };
     });
 
+    // Evening solar/house-load crossover marker (see computeSolarLoadCrossover)
+    const crossover = computeSolarLoadCrossover(todayData, predictions, actualDataCount);
+
+    // Automation health banner (a failed or blocked auto-stop needs manual action)
+    updateBatteryAutomationBanner(predictions.warning);
+
     batteryChart = new Chart(ctx, {
         type: 'line',
-        plugins: [autoChargeMarkersPlugin],
+        plugins: [autoChargeMarkersPlugin, solarCrossoverPlugin],
         data: {
             labels: timeLabels.concat(predictions.labels),
             datasets: datasets
@@ -1229,6 +1421,9 @@ function createBatteryChart(todayData) {
             plugins: {
                 autoChargeMarkers: {
                     events: markerEvents
+                },
+                solarCrossover: {
+                    marker: crossover
                 },
                 legend: {
                     labels: {
@@ -1251,6 +1446,8 @@ function createBatteryChart(todayData) {
                             }
                         });
                         chart.update();
+                        // Keep the Yesterday/Today group buttons in sync
+                        syncBatteryDayToggleButtons();
                     }
                 }
             },
@@ -1280,4 +1477,62 @@ function createBatteryChart(todayData) {
             }
         }
     });
+
+    // Reflect the current per-day visibility on the Yesterday/Today toggle buttons
+    syncBatteryDayToggleButtons();
 }
+
+// --- Yesterday/Today group toggles for the Battery Levels chart ---
+// Datasets are tagged with dayGroup ('yesterday' or 'today'). These helpers
+// show/hide a whole group at once, while individual lines can still be toggled
+// via the legend. Yesterday's lines start hidden (today-only on load).
+
+// Show or hide every dataset belonging to a day group.
+function setBatteryDayGroupVisibility(group, show) {
+    if (!batteryChart) return;
+    batteryChart.data.datasets.forEach((ds, i) => {
+        if (ds.dayGroup === group) {
+            batteryChart.setDatasetVisibility(i, show);
+        }
+    });
+    batteryChart.update();
+    syncBatteryDayToggleButtons();
+}
+
+// Flip a day group: if any of its lines are showing, hide them all; else show all.
+function toggleBatteryDayGroup(group) {
+    if (!batteryChart) return;
+    let anyVisible = false;
+    batteryChart.data.datasets.forEach((ds, i) => {
+        if (ds.dayGroup === group && ds.label !== '' && batteryChart.isDatasetVisible(i)) {
+            anyVisible = true;
+        }
+    });
+    setBatteryDayGroupVisibility(group, !anyVisible);
+}
+
+// Update the pressed/active look of the toggle buttons to match chart state.
+function syncBatteryDayToggleButtons() {
+    if (!batteryChart) return;
+    const groups = { yesterday: 'batteryYesterdayToggle', today: 'batteryTodayToggle' };
+    Object.keys(groups).forEach(group => {
+        const btn = document.getElementById(groups[group]);
+        if (!btn) return;
+        let anyVisible = false;
+        batteryChart.data.datasets.forEach((ds, i) => {
+            if (ds.dayGroup === group && ds.label !== '' && batteryChart.isDatasetVisible(i)) {
+                anyVisible = true;
+            }
+        });
+        btn.classList.toggle('active', anyVisible);
+        btn.setAttribute('aria-pressed', anyVisible ? 'true' : 'false');
+    });
+}
+
+// Wire the toggle buttons once (the chart itself is recreated on every refresh).
+document.addEventListener('DOMContentLoaded', function () {
+    const yBtn = document.getElementById('batteryYesterdayToggle');
+    if (yBtn) yBtn.addEventListener('click', () => toggleBatteryDayGroup('yesterday'));
+    const tBtn = document.getElementById('batteryTodayToggle');
+    if (tBtn) tBtn.addEventListener('click', () => toggleBatteryDayGroup('today'));
+});

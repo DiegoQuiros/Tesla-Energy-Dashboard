@@ -46,12 +46,34 @@ async function fetchDailySummary() {
     }
 }
 
+// Fetch the charge automation's persisted state (per-car cooldowns and failed
+// command attempts) so the battery chart can warn when the automation needed to
+// stop a charge but couldn't. Never throws: the warning simply stays silent on
+// the blocked-automation cases when the blob is unavailable.
+async function fetchChargeAutomationState() {
+    try {
+        const response = await fetch(`${CHARGE_AUTOMATION_STATE_URL}?t=${Date.now()}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return await response.json();
+    } catch (error) {
+        console.warn('Charge automation state unavailable (automation warnings limited):', error.message);
+        return null;
+    }
+}
+
 async function loadEnergyData() {
     try {
         console.log('Loading energy data from:', AZURE_BLOB_URL);
 
-        const [data, summary] = await Promise.all([fetchEnergyData(), fetchDailySummary()]);
+        const [data, summary, automationState] = await Promise.all([
+            fetchEnergyData(), fetchDailySummary(), fetchChargeAutomationState()]);
         dailySummaryData = summary;
+        // Keep the last good automation state on a transient fetch failure so a
+        // critical "stop the charge manually" banner doesn't flap off for a full
+        // refresh cycle (the fetch races the collector's 15-min blob upload)
+        if (automationState) window.chargeAutomationState = automationState;
 
         energyData = data.sort((a, b) => convertToPDT(a.LocalTimestamp) - convertToPDT(b.LocalTimestamp));
 

@@ -5,7 +5,7 @@ const CHARGE_AUTOMATION = SHARED_CONFIG.CHARGE_AUTOMATION;
 
 function generateBatteryPredictions(todayData) {
     if (todayData.length === 0) {
-        return { labels: [], powerwall: [], model3: [], modelX: [] };
+        return { labels: [], powerwall: [], model3: [], modelX: [], times: [], solar: [], houseLoad: [], events: [], warning: null };
     }
 
     const ctx = buildPredictionContext(todayData);
@@ -37,8 +37,116 @@ function generateBatteryPredictions(todayData) {
         powerwall: result.powerwall,
         model3: result.model3,
         modelX: result.modelX,
-        events: visibleEvents
+        times: result.times,
+        solar: result.solar,
+        houseLoad: result.houseLoad,
+        events: visibleEvents,
+        // Live automation health: set when a charging car endangers the
+        // 100%-by-crossover goal and the automation can't (or can no longer) fix it
+        warning: assessAutomationWarning(ctx, overrides)
     };
+}
+
+/**
+ * Health check for the live charge automation, shown as a banner on the battery
+ * chart. Fires only when a car is charging at home right now AND the Powerwall
+ * is predicted to miss 100% by the solar/load crossover with the car charging.
+ * The blocked/failed cases mirror ChargeAutomationManager's guards, judged
+ * against its persisted state blob (window.chargeAutomationState):
+ *  - the automation already tried to stop the car today and the command failed
+ *  - a stop is due now but the car's auto-stop is inside its cooldown window
+ *  - 100% is out of reach even if the car stops right now (model verdict, no
+ *    blob needed)
+ * Returns { severity: 'critical'|'caution', message } or null when healthy.
+ */
+function assessAutomationWarning(ctx, overrides) {
+    if (ctx.simulationSettings) return null; // user is simulating — predictions aren't real
+    if (window.timeNavigator && !window.timeNavigator.isInLiveMode()) return null; // warnings drive action NOW
+    // Stale feed → "charging right now" wouldn't be trustworthy
+    if (Date.now() - convertToPDT(ctx.latest.LocalTimestamp).getTime() > 45 * 60 * 1000) return null;
+
+    let chargingCar = null;
+    for (const key of ['Model3', 'ModelX']) {
+        if (ctx.latest[key + 'IsAvailable'] && ctx.latest[key + 'IsCharging'] &&
+            !ctx.latest[key + 'FastChargerPresent'] && ctx.actualKw[key] > 0) {
+            chargingCar = key;
+            break;
+        }
+    }
+    if (!chargingCar) return null;
+
+    // Same continue-vs-stop-now sims the automation runs (potential-solar mode)
+    const base = {
+        usePotentialSolar: true,
+        applyModel3WeekdayStop: overrides.applyModel3WeekdayStop,
+        start: overrides.start || null,
+        stops: Object.assign({}, overrides.stops)
+    };
+    delete base.stops[chargingCar];
+    const continueForecast = simulateDay(ctx, base);
+    if (reaches100ByCrossover(continueForecast)) return null; // goal safe even with the car charging
+
+    // After the day's produced-solar/house-load crossover there is nothing left
+    // to protect — the Powerwall only declines until tomorrow and the automation
+    // deliberately leaves evening charging alone (0pp improvement). Without this
+    // gate every evening/night home charge would show a pointless warning.
+    if (!continueForecast.solarLoadCrossover) return null;
+
+    const stopNowForecast = simulateDay(ctx, Object.assign({}, base, {
+        stops: Object.assign({}, base.stops, { [chargingCar]: ctx.now })
+    }));
+    const goalLost = !reaches100ByCrossover(stopNowForecast);
+    const carName = chargingCar === 'Model3' ? 'Model 3' : 'Model X';
+    const peakText = ` The Powerwall is predicted to peak at ~${stopNowForecast.peakPercent.toFixed(0)}%.`;
+
+    const vehicleState = window.chargeAutomationState ? window.chargeAutomationState[chargingCar] : null;
+    if (vehicleState) {
+        // Cooldown block: a stop is due within the automation's 20-min lookahead,
+        // but this car was already auto-stopped inside the cooldown window (the
+        // charge running again means a person restarted it — the automation
+        // honors that and will not stop it again yet)
+        const cooldownMs = CHARGE_AUTOMATION.ACTION_COOLDOWN_HOURS * 3600 * 1000;
+        const lastStopMs = Date.parse(vehicleState.LastStopUtc || '');
+        const sinceStopMs = Date.now() - lastStopMs;
+        const plannedStop = overrides.stops && overrides.stops[chargingCar];
+        const stopDueSoon = plannedStop && (plannedStop.getTime() - ctx.now.getTime()) <= 20 * 60 * 1000; // STOP_LOOKAHEAD_MINUTES
+
+        if (!isNaN(lastStopMs) && sinceStopMs >= 0 && sinceStopMs < cooldownMs && stopDueSoon) {
+            return {
+                severity: 'critical',
+                message: `The charge automation needs to stop the ${carName}, but it already auto-stopped it ` +
+                    `${Math.round(sinceStopMs / 60000)} min ago and is honoring its ` +
+                    `${CHARGE_AUTOMATION.ACTION_COOLDOWN_HOURS}h cooldown — stop the charge manually to protect the Powerwall.` +
+                    (goalLost ? peakText : '')
+            };
+        }
+
+        // Failed commands: the automation decided to stop this car today and the
+        // charge_stop command failed (it retries at most 3 times per day). The C#
+        // side zeroes StopFailedAttemptsToday on a later successful stop, so a
+        // nonzero count today means the most recent stop attempt is still failing.
+        const failedStops = vehicleState.LastStopAttemptDatePacific === pacificDateKey(ctx.now)
+            ? (vehicleState.StopFailedAttemptsToday || 0) : 0;
+        if (failedStops > 0) {
+            return {
+                severity: 'critical',
+                message: `The charge automation tried to stop the ${carName} ${failedStops}× today, but the ` +
+                    `charge_stop command failed` +
+                    (failedStops >= 3 ? ' and it has given up for today' : '') +
+                    ` — stop the charge manually to protect the Powerwall.` +
+                    (goalLost ? peakText : '')
+            };
+        }
+    }
+
+    if (goalLost) {
+        return {
+            severity: 'caution',
+            message: `The Powerwall can no longer reach 100% by the solar/load crossover, even if the ` +
+                `${carName} stops charging now.` + peakText
+        };
+    }
+    return null; // an auto-stop is planned and nothing indicates it is blocked
 }
 
 /**
@@ -131,6 +239,15 @@ function buildPredictionContext(todayData) {
 }
 
 /**
+ * "yyyy-MM-dd" of a Pacific wall-clock Date, matching the C# automation's
+ * nowPacific.ToString("yyyy-MM-dd") for comparing against the state blob's
+ * LastStop/LastTrigger date fields. (now is already Pacific on the dashboard.)
+ */
+function pacificDateKey(now) {
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+/**
  * First 15-minute slot boundary at or after the given time (matches the
  * automation's NextSlotBoundary).
  */
@@ -169,6 +286,9 @@ function simulateDay(ctx, overrides) {
     const result = {
         labels: [], powerwall: [], model3: [], modelX: [],
         times: [], chargeRateKw: [],
+        // Per-slot produced solar and house load (excl. car charging) so the
+        // battery chart can mark the evening solar/house-load crossover
+        solar: [], houseLoad: [],
         reaches100: false, fullTime: null,
         peakPercent: (ctx.latest.BatteryPercentage || 0),
         lastUsefulSolarEnd: null,
@@ -305,6 +425,8 @@ function simulateDay(ctx, overrides) {
         if (producedSolarKw >= houseLoadKw) {
             result.solarLoadCrossover = new Date(currentTime.getTime() + 15 * 60 * 1000);
         }
+        result.solar.push(producedSolarKw);
+        result.houseLoad.push(houseLoadKw);
 
         // Move to next 15-minute interval
         currentTime.setMinutes(currentTime.getMinutes() + 15);
@@ -435,9 +557,10 @@ function decideStopTime(ctx, key, baseOverrides, fromTime) {
 
 /**
  * The car the automation could auto-start today — port of PickConnectedVehicle
- * plus the once-per-day rule: plugged in at home, below its limit, and without
- * a home charging session earlier today (one that ended below the limit means
- * someone stopped it on purpose, and the automation never restarts it).
+ * plus the cooldown rule: plugged in at home, below its limit, and without a
+ * home charging session within the action cooldown window (one that ended below
+ * the limit means someone stopped it on purpose; the automation waits out the
+ * cooldown before restarting it).
  */
 function pickStartCandidate(ctx, chargingCar) {
     const candidates = [];
@@ -456,7 +579,10 @@ function pickStartCandidate(ctx, chargingCar) {
             if (ctx.level[key] >= PREDICTION_CONFIG.DEFAULT_EV_CHARGE_LIMIT) continue;
             ctx.limit[key] = PREDICTION_CONFIG.DEFAULT_EV_CHARGE_LIMIT;
         }
-        if (hadHomeChargingSessionToday(ctx.dataSource, key, ctx.now)) continue;
+        // Restart allowed only once the last home session ended more than the
+        // action cooldown ago (2h) — mirrors the automation leaving a recently
+        // stopped car alone before it may be started again
+        if (hadRecentHomeChargingSession(ctx.dataSource, key, ctx.now)) continue;
         candidates.push({ key, reported: convertToPDT(report.LocalTimestamp) });
     }
     if (candidates.length === 0) return null;
@@ -466,18 +592,19 @@ function pickStartCandidate(ctx, chargingCar) {
 }
 
 /**
- * True if the car was seen charging at home at any point today. Together with
+ * True if the car was seen charging at home within the action cooldown window
+ * (ACTION_COOLDOWN_HOURS) — port of HadRecentHomeChargingSession. Together with
  * "currently stopped below its limit" that means a person (or the car's own
- * schedule) ended the session, and the automation must not restart it.
+ * schedule) recently ended the session, and the automation waits out the
+ * cooldown before restarting it.
  */
-function hadHomeChargingSessionToday(dataSource, key, now) {
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
+function hadRecentHomeChargingSession(dataSource, key, now) {
+    const cutoff = new Date(now.getTime() - CHARGE_AUTOMATION.ACTION_COOLDOWN_HOURS * 3600 * 1000);
     for (let i = dataSource.length - 1; i >= 0; i--) {
         const point = dataSource[i];
         const pointDate = convertToPDT(point.LocalTimestamp);
         if (pointDate > now) continue;
-        if (pointDate < todayStart) break; // history is chronological
+        if (pointDate < cutoff) break; // history is chronological
         if (point[key + 'IsAvailable'] && point[key + 'IsCharging'] && !point[key + 'FastChargerPresent']) {
             return true;
         }
@@ -511,6 +638,10 @@ function findAutoStartTime(ctx, key, baseOverrides) {
 
         const solarHoursLeft = (baseline.lastUsefulSolarEnd - t) / (3600 * 1000);
         if (solarHoursLeft < CHARGE_AUTOMATION.MIN_SOLAR_HOURS_LEFT) continue;
+
+        // A (re)start must land before the day's solar/house-load crossover —
+        // after it there is no surplus for the car (mirrors EvaluateStartAsync)
+        if (baseline.solarLoadCrossover && t >= baseline.solarLoadCrossover) break;
 
         return t;
     }
@@ -618,6 +749,17 @@ function toPotentialSolarProfile(solarProfile) {
             if (Math.abs(m - solarNoonSlot) >= dist) {
                 best = Math.max(best, solarProfile[m]);
             }
+        }
+        // Afternoon delivery factor: mirroring the (steeper) morning ramp onto the
+        // afternoon overstates what the panels actually deliver — by ~1.3x across a
+        // backtested year, roughly constant past solar noon. Scale post-noon potential
+        // by AFTERNOON_FACTOR, ramped in over the first RAMP_HOURS so there's no cliff
+        // at noon. Keeps the STOP side from targeting phantom evening solar and letting
+        // the latest-safe stop slide too late (2026-07-21 incident). See shared-config.js.
+        if (s > solarNoonSlot) {
+            const hoursPastNoon = (s - solarNoonSlot) / 4; // 4 fifteen-minute slots per hour
+            const ramp = Math.min(1, hoursPastNoon / PREDICTION_CONFIG.POTENTIAL_AFTERNOON_RAMP_HOURS);
+            best *= 1 - (1 - PREDICTION_CONFIG.POTENTIAL_AFTERNOON_FACTOR) * ramp;
         }
         potential[s] = best;
     }
