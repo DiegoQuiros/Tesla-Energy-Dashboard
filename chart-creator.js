@@ -67,11 +67,17 @@ function createDailySolarChart() {
         const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
         let entry = dailyTotals.get(key);
         if (!entry) {
-            entry = { date: new Date(date.getFullYear(), date.getMonth(), date.getDate()), solarKwh: 0, gridKwh: 0 };
+            entry = { date: new Date(date.getFullYear(), date.getMonth(), date.getDate()), solarKwh: 0, gridKwh: 0, loadKwh: 0, exportKwh: 0, m3Kwh: 0, mxKwh: 0 };
             dailyTotals.set(key, entry);
         }
         entry.solarKwh += Math.max(0, point.SolarPowerKw || 0) * dtHours;
-        entry.gridKwh += Math.max(0, point.GridPowerKw || 0) * dtHours; // positive = importing
+        entry.gridKwh += Math.max(0, point.GridPowerKw || 0) * dtHours;   // positive = importing
+        entry.exportKwh += Math.max(0, -(point.GridPowerKw || 0)) * dtHours; // negative grid = exporting
+        entry.loadKwh += Math.max(0, point.LoadPowerKw || 0) * dtHours;
+        // EV charging is part of the load; gate by IsCharging so a stale nonzero
+        // reading on an idle car doesn't count (matches the collector's aggregation)
+        if (point.Model3IsCharging) entry.m3Kwh += Math.max(0, point.Model3ChargerPowerKw || 0) * dtHours;
+        if (point.ModelXIsCharging) entry.mxKwh += Math.max(0, point.ModelXChargerPowerKw || 0) * dtHours;
     }
 
     // Overlay the daily summary blob: authoritative for completed days (it covers
@@ -83,11 +89,23 @@ function createDailySolarChart() {
         const [y, m, d] = s.Date.split('-').map(Number);
         const date = new Date(y, m - 1, d);
         if (date < cutoff) continue;
-        dailyTotals.set(s.Date, { date, solarKwh: s.SolarKwh || 0, gridKwh: s.GridImportKwh || 0 });
+        dailyTotals.set(s.Date, {
+            date,
+            solarKwh: s.SolarKwh || 0,
+            gridKwh: s.GridImportKwh || 0,
+            exportKwh: s.GridExportKwh || 0,
+            loadKwh: s.LoadKwh || 0,
+            // Present once the collector/backfill has added per-car fields; 0 until then
+            m3Kwh: s.Model3ChargeKwh || 0,
+            mxKwh: s.ModelXChargeKwh || 0
+        });
     }
 
     const days = [...dailyTotals.values()].sort((a, b) => a.date - b.date);
     if (days.length === 0) return;
+
+    // Roll the per-day totals up into the year-at-a-glance stat tiles above the chart
+    updateDailySolarStats(days);
 
     const labels = days.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
     const solarData = days.map(d => Math.round(d.solarKwh * 10) / 10);
@@ -157,6 +175,225 @@ function createDailySolarChart() {
             }
         }
     });
+}
+
+// Build the "year at a glance" stat tiles above the daily-solar chart from the
+// same per-day totals the chart draws, so the numbers always reconcile with the
+// bars. `days` is sorted oldest→newest; the last entry is today (still partial).
+function updateDailySolarStats(days) {
+    const el = document.getElementById('dailySolarStats');
+    if (!el) return;
+    if (!days || days.length === 0) {
+        el.innerHTML = '';
+        return;
+    }
+
+    let totalSolar = 0, totalGrid = 0, totalExport = 0, totalLoad = 0, totalM3 = 0, totalMX = 0;
+    for (const d of days) {
+        totalSolar += d.solarKwh || 0;
+        totalGrid += d.gridKwh || 0;
+        totalExport += d.exportKwh || 0;
+        totalLoad += d.loadKwh || 0;
+        totalM3 += d.m3Kwh || 0;
+        totalMX += d.mxKwh || 0;
+    }
+
+    // Self-reliance: share of everything the home consumed that came from solar +
+    // Powerwall rather than the grid. Guard against a zero/negative load window.
+    const selfReliance = totalLoad > 0
+        ? Math.max(0, Math.min(100, (totalLoad - totalGrid) / totalLoad * 100))
+        : 0;
+
+    // A day is grid-free when its imported energy is below the noise threshold
+    const isGridFree = d => (d.gridKwh || 0) < GRID_FREE_THRESHOLD_KWH;
+    const gridFreeDays = days.filter(isGridFree).length;
+
+    // Current run of grid-free days, counting back from the most recent day
+    let currentStreak = 0;
+    for (let i = days.length - 1; i >= 0; i--) {
+        if (!isGridFree(days[i])) break;
+        currentStreak++;
+    }
+    // Longest grid-free run anywhere in the window
+    let longestStreak = 0, run = 0;
+    for (const d of days) {
+        run = isGridFree(d) ? run + 1 : 0;
+        if (run > longestStreak) longestStreak = run;
+    }
+
+    // Value of the energy the system supplied instead of buying it from the grid
+    const estSaved = Math.max(0, totalLoad - totalGrid) * ELECTRICITY_RATE_PER_KWH;
+    const gridFreePct = Math.round(gridFreeDays / days.length * 100);
+
+    // Storage term = what came in minus what the home used or exported. It's the net
+    // energy the Powerwall absorbed over the window (round-trip + standby losses, plus
+    // any small change in charge level) — the amount that balances the flow diagram.
+    const storageLoss = (totalSolar + totalGrid) - (totalLoad + totalExport);
+
+    const money = v => '$' + (Math.round(v / 10) * 10).toLocaleString('en-US');
+    const dayWord = n => `${n} day${n === 1 ? '' : 's'}`;
+
+    const rangeStart = days[0].date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const rangeEnd = days[days.length - 1].date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+    const tile = (accent, label, value, unit, sub) => `
+        <div class="energy-stat ${accent}">
+            <div class="energy-stat-label">${label}</div>
+            <div class="energy-stat-value">${value}${unit ? `<span class="unit">${unit}</span>` : ''}</div>
+            <div class="energy-stat-sub">${sub}</div>
+        </div>`;
+
+    // The raw kWh amounts (solar / grid / home / export) now live in the flow diagram
+    // below the chart; these five tiles keep the "how independent am I" scorecard.
+    const tiles = [
+        tile('accent-green hero', 'Self-Reliance', selfReliance.toFixed(1), '%', 'of usage met without the grid'),
+        tile('accent-green', 'Grid-Free Days', `${gridFreeDays}<span class="unit"> / ${days.length}</span>`, '', `${gridFreePct}% of days, zero grid`),
+        tile('accent-green hero', 'Current Streak', currentStreak, currentStreak === 1 ? ' day' : ' days', 'in a row & counting'),
+        tile('accent-green', 'Longest Streak', longestStreak, longestStreak === 1 ? ' day' : ' days', 'best grid-free run'),
+        tile('accent-green', 'Est. Saved', money(estSaved), '', `vs. grid @ $${ELECTRICITY_RATE_PER_KWH.toFixed(2)}/kWh`)
+    ];
+
+    el.innerHTML =
+        `<div class="summary-caption">Last ${dayWord(days.length)} of data &nbsp;•&nbsp; ${rangeStart} – ${rangeEnd}</div>` +
+        `<div class="energy-stat-grid">${tiles.join('')}</div>`;
+
+    // Feed the same yearly totals into the Sankey-style energy-flow diagram
+    updateEnergyFlowDiagram({
+        solar: totalSolar,
+        gridImport: totalGrid,
+        gridExport: totalExport,
+        load: totalLoad,
+        model3: totalM3,
+        modelX: totalMX,
+        loss: storageLoss,
+        dayCount: days.length,
+        rangeStart,
+        rangeEnd
+    });
+}
+
+// Sankey-style yearly energy-flow diagram: everything that came IN (solar + grid)
+// fans through a central total, then OUT to the home, grid export, and the Powerwall
+// storage losses. Ribbon and node heights are proportional to kWh, so the picture
+// balances by construction and the "losses" node explains the solar-vs-usage gap.
+function updateEnergyFlowDiagram(t) {
+    const el = document.getElementById('energyFlowDiagram');
+    if (!el) return;
+
+    const captionEl = document.getElementById('energyFlowCaption');
+    const inTotal = t.solar + t.gridImport;
+    if (inTotal <= 0) { el.innerHTML = ''; if (captionEl) captionEl.textContent = ''; return; }
+
+    // Clamp tiny rounding negatives; over a year the battery is a net sink so loss > 0
+    const loss = Math.max(0, t.loss);
+
+    // Home load minus each car's charging = the non-EV household base
+    const homeBase = Math.max(0, t.load - (t.model3 || 0) - (t.modelX || 0));
+
+    if (captionEl) {
+        captionEl.innerHTML =
+            `Last ${t.dayCount} days &nbsp;•&nbsp; ${t.rangeStart} – ${t.rangeEnd} &nbsp;•&nbsp; ` +
+            `every kWh in (solar + grid) went to the home, the cars, back to the grid, or was lost cycling the Powerwall`;
+    }
+
+    const C = {
+        solar: '#ffcc00', grid: '#ff6b35', pool: '#8090a6',
+        home: '#7e57c2', m3: '#ec407a', mx: '#2196f3', export: '#26c6da', loss: '#ef5350'
+    };
+    const lossTip = 'Energy lost cycling the Powerwall (round-trip conversion + standby). ' +
+        'Not delivered to the home or the cars, and not exported to the grid.';
+
+    // Inflows and outflows as ordered lists (largest first so bars and colors read
+    // cleanly); only nonzero flows are drawn. Model 3 / Model X are carved out of the
+    // household load, so home + M3 + MX + export + loss still sums to the total in.
+    const sources = [
+        { name: 'Solar', val: t.solar, color: C.solar },
+        { name: 'Grid in', val: t.gridImport, color: C.grid }
+    ].filter(s => s.val > 0).sort((a, b) => b.val - a.val);
+
+    const sinks = [
+        { name: 'Home', val: homeBase, color: C.home, tip: 'Household load excluding EV charging' },
+        { name: 'Model 3', val: t.model3 || 0, color: C.m3, tip: 'Energy delivered to the Model 3' },
+        { name: 'Model X', val: t.modelX || 0, color: C.mx, tip: 'Energy delivered to the Model X' },
+        { name: 'Exported', val: t.gridExport, color: C.export, tip: 'Surplus solar sent back to the grid' },
+        { name: 'Losses', val: loss, color: C.loss, tip: lossTip }
+    ].filter(s => s.val > 0).sort((a, b) => b.val - a.val);
+
+    // Canvas geometry (SVG user units; scales responsively via viewBox)
+    const W = 960, H = 360, yTop = 62, yBot = 322, barW = 15;
+    const leftX = 236, poolX = 470, rightX = 704;
+    const usableH = yBot - yTop;
+    const scale = usableH / inTotal;
+    const r = n => n.toFixed(1);
+    const fmt = v => Math.round(v).toLocaleString('en-US');
+
+    // Stack a column's segments from the top, recording each one's y / height / center
+    const stack = items => {
+        let y = yTop;
+        return items.map(it => { const seg = Object.assign({ y, h: it.val * scale, center: y + it.val * scale / 2 }, it); y += it.val * scale; return seg; });
+    };
+    const src = stack(sources), snk = stack(sinks);
+
+    // Nudge label centers apart to a minimum spacing (small segments would otherwise
+    // collide), keeping them within the band; a leader line reconnects a moved label.
+    const spread = (centers, minGap) => {
+        const a = centers.slice();
+        for (let i = 1; i < a.length; i++) if (a[i] - a[i - 1] < minGap) a[i] = a[i - 1] + minGap;
+        const over = a[a.length - 1] - (yBot - 2);
+        if (over > 0) for (let i = 0; i < a.length; i++) a[i] -= over;
+        for (let i = a.length - 2; i >= 0; i--) if (a[i + 1] - a[i] < minGap) a[i] = a[i + 1] - minGap;
+        if (a[0] < yTop + 2) { const d = yTop + 2 - a[0]; for (let i = 0; i < a.length; i++) a[i] += d; }
+        return a;
+    };
+    const srcLabelY = spread(src.map(s => s.center), 24);
+    const snkLabelY = spread(snk.map(s => s.center), 24);
+
+    const ribbon = (color, x1, x2, t1, b1, t2, b2) => {
+        const mx1 = x1 + (x2 - x1) * 0.5, mx2 = x2 - (x2 - x1) * 0.5;
+        const d = `M${r(x1)},${r(t1)} C${r(mx1)},${r(t1)} ${r(mx2)},${r(t2)} ${r(x2)},${r(t2)} ` +
+            `L${r(x2)},${r(b2)} C${r(mx2)},${r(b2)} ${r(mx1)},${r(b1)} ${r(x1)},${r(b1)} Z`;
+        return `<path d="${d}" fill="${color}" fill-opacity="0.42"/>`;
+    };
+    const node = (x, s) =>
+        `<rect x="${r(x)}" y="${r(s.y)}" width="${barW}" height="${r(Math.max(s.h, 1))}" rx="3" fill="${s.color}" fill-opacity="0.95">` +
+        (s.tip ? `<title>${s.tip}</title>` : '') + `</rect>`;
+    const leader = (x1, y1, x2, y2) => Math.abs(y1 - y2) < 3 ? '' :
+        `<path d="M${r(x1)},${r(y1)} L${r(x2)},${r(y2)}" stroke="#ffffff" stroke-opacity="0.18" stroke-width="1" fill="none"/>`;
+    const label = (x, cy, anchor, name, color, val) =>
+        `<text x="${r(x)}" y="${r(cy)}" text-anchor="${anchor}" dominant-baseline="central" font-size="15">` +
+        `<tspan fill="${color}" font-weight="600">${name}</tspan> ` +
+        `<tspan fill="#ffffff" font-weight="700">${fmt(val)}</tspan>` +
+        `<tspan fill="#9aa7bd" font-size="11"> kWh</tspan></text>`;
+
+    // Ribbons: source bar → pool left face (same y-band), pool right face → sink bar
+    const ribbons = [
+        ...src.map(s => ribbon(s.color, leftX + barW, poolX, s.y, s.y + s.h, s.y, s.y + s.h)),
+        ...snk.map(s => ribbon(s.color, poolX + barW, rightX, s.y, s.y + s.h, s.y, s.y + s.h))
+    ].join('');
+
+    const nodes = [
+        ...src.map(s => node(leftX, s)),
+        `<rect x="${r(poolX)}" y="${r(yTop)}" width="${barW}" height="${r(usableH)}" rx="3" fill="${C.pool}" fill-opacity="0.95">` +
+        `<title>Total energy through the system: ${fmt(inTotal)} kWh</title></rect>`,
+        ...snk.map(s => node(rightX, s))
+    ].join('');
+
+    const labels = [
+        ...src.map((s, i) => leader(leftX, s.center, leftX - 12, srcLabelY[i]) +
+            label(leftX - 12, srcLabelY[i], 'end', s.name, s.color, s.val)),
+        ...snk.map((s, i) => leader(rightX + barW, s.center, rightX + barW + 12, snkLabelY[i]) +
+            label(rightX + barW + 12, snkLabelY[i], 'start', s.name, s.color, s.val)),
+        `<text x="${r(leftX + barW / 2)}" y="42" text-anchor="middle" font-size="11" letter-spacing="1" fill="#8a9bb5">CAME IN</text>`,
+        `<text x="${r(rightX + barW / 2)}" y="42" text-anchor="middle" font-size="11" letter-spacing="1" fill="#8a9bb5">WENT TO</text>`,
+        `<text x="${r(poolX + barW / 2)}" y="38" text-anchor="middle" font-size="12" fill="#c7d2e0">` +
+        `<tspan font-weight="700">${fmt(inTotal)}</tspan> kWh</text>`,
+        `<text x="${r(poolX + barW / 2)}" y="${r(yBot + 18)}" text-anchor="middle" font-size="11" letter-spacing="1" fill="#8a9bb5">TOTAL</text>`
+    ].join('');
+
+    el.innerHTML =
+        `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" ` +
+        `aria-label="Yearly energy flow: ${fmt(inTotal)} kWh in; home ${fmt(homeBase)}, Model 3 ${fmt(t.model3 || 0)}, Model X ${fmt(t.modelX || 0)}, exported ${fmt(t.gridExport)}, losses ${fmt(loss)} kWh">` +
+        `${ribbons}${nodes}${labels}</svg>`;
 }
 
 // Function to create charts for current time navigator state

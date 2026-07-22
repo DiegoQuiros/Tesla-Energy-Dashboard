@@ -14,6 +14,16 @@ let energyCreationChart = null;
 let energyUsageChart = null;
 let lastDataTimestamp = null; // Store the timestamp of the last data update
 
+// A day counts as "grid-free" when imported grid energy is below this many kWh.
+// Not exactly zero: rounding and brief transients can leave a few Wh on an
+// otherwise fully self-supplied day.
+const GRID_FREE_THRESHOLD_KWH = 0.1;
+
+// Blended residential rate ($/kWh) used only to estimate the dollar value of the
+// energy the solar + Powerwall system supplied instead of the grid. Tune to your
+// utility's actual all-in rate; it drives the "Est. Saved" tile only.
+const ELECTRICITY_RATE_PER_KWH = 0.27;
+
 // Battery capacities in kWh — single source of truth in shared-config.js
 const BATTERY_CAPACITIES = SHARED_CONFIG.BATTERY_CAPACITIES;
 

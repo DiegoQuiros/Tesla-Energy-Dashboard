@@ -62,6 +62,7 @@ const SHARED_CONFIG = {
         "NEARLY_FULL_PERCENT": 95,             // "nearly full" for the low trigger bar
         "MIN_SOLAR_HOURS_LEFT": 3.0,           // don't start a charge without this much useful solar left
         "STOP_MIN_IMPROVEMENT_PERCENT": 2.0,   // don't interrupt a charge for less predicted Powerwall gain than this
-        "ACTION_COOLDOWN_HOURS": 2.0           // a car's auto-start/auto-stop may repeat after this long (was once per day)
+        "ACTION_COOLDOWN_HOURS": 2.0,          // a car's auto-start/auto-stop may repeat after this long (was once per day)
+        "CROSSOVER_COOL_SETPOINT_F": 80        // when an auto-stop fires at the crossover, raise a below-80 cool setpoint to this to shed evening HVAC load
     }
 };

@@ -221,9 +221,17 @@
                             <button class="maximize-btn" id="dailySolarMaximizeBtn">Maximize</button>
                         </div>
                     </h3>
+                    <div class="solar-year-summary" id="dailySolarStats"></div>
                     <div class="chart-wrapper">
                         <canvas id="dailySolarChart"></canvas>
                     </div>
+                </div>
+
+                <!-- Yearly Energy Flow (Sankey) -->
+                <div class="chart-container" id="energyFlowContainer">
+                    <h3>⚡ Where Your Energy Goes (Last 12 Months)</h3>
+                    <div class="flow-caption" id="energyFlowCaption"></div>
+                    <div class="energy-flow-diagram" id="energyFlowDiagram"></div>
                 </div>
 
                 <!-- Heat Pump / HVAC Card -->
