@@ -25,157 +25,638 @@
             <!-- Enhanced Energy Flow Section -->
             <div class="energy-flow-section">
                 <div class="header">
-                    <h2>⚡ Energy Flow</h2>
+                    <h2><span class="spark">⚡</span> Energy Flow</h2>
                     <div class="last-updated" id="lastUpdated">Loading...</div>
                 </div>
                 <div class="flow-visualization">
-                    <!-- House structure -->
-                    <div class="house-container">
-                        <div class="house">
+                    <!-- Everything is laid out in a fixed 1100x600 stage that scales to fit -->
+                    <div class="flow-stage" id="flowStage">
+                        <!-- scene-inner scales the whole scene (illustration + cards) to 90% about center -->
+                        <div class="scene-inner">
+                            <svg class="scene" width="1100" height="600" viewBox="0 0 1100 600" aria-hidden="true">
+                                <defs>
+                                    <radialGradient id="sunGrad" cx="38%" cy="34%" r="70%">
+                                        <stop offset="0" stop-color="#ffe08a" />
+                                        <stop offset="45%" stop-color="#ffc23d" />
+                                        <stop offset="100%" stop-color="#ff9e12" />
+                                    </radialGradient>
+                                    <linearGradient id="bodyGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0" stop-color="#33405e" />
+                                        <stop offset="1" stop-color="#1f2942" />
+                                    </linearGradient>
+                                    <linearGradient id="garageGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0" stop-color="#2b3752" />
+                                        <stop offset="1" stop-color="#1b2540" />
+                                    </linearGradient>
+                                    <linearGradient id="roofGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0" stop-color="#57648a" />
+                                        <stop offset="1" stop-color="#3c4869" />
+                                    </linearGradient>
+                                    <linearGradient id="pwGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0" stop-color="#eef2f8" />
+                                        <stop offset="1" stop-color="#c2cdde" />
+                                    </linearGradient>
+                                    <linearGradient id="carRedGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0" stop-color="#e8463a" />
+                                        <stop offset="0.5" stop-color="#c62c22" />
+                                        <stop offset="1" stop-color="#8f1a13" />
+                                    </linearGradient>
+                                    <linearGradient id="carGlass" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0" stop-color="#2b3a56" />
+                                        <stop offset="1" stop-color="#101a30" />
+                                    </linearGradient>
+                                </defs>
+
+                                <!-- ground line (floor reference under the cars) -->
+                                <line x1="0" y1="548" x2="1100" y2="548" stroke="rgba(255,255,255,.07)" stroke-width="1.5" />
+
+                                <!-- sun (horizontally centered, center at tower-top height, scaled to 57.5%) -->
+                                <g id="sunGlow" transform="translate(483.875, 82.65) scale(0.575)">
+                                    <g stroke="#ffce5c" stroke-width="3.5" stroke-linecap="round" opacity=".6">
+                                        <line x1="115" y1="40" x2="115" y2="54" />
+                                        <line x1="115" y1="142" x2="115" y2="156" />
+                                        <line x1="57" y1="98" x2="71" y2="98" />
+                                        <line x1="159" y1="98" x2="173" y2="98" />
+                                        <line x1="74" y1="57" x2="84" y2="67" />
+                                        <line x1="146" y1="129" x2="156" y2="139" />
+                                        <line x1="156" y1="57" x2="146" y2="67" />
+                                        <line x1="84" y1="129" x2="74" y2="139" />
+                                    </g>
+                                    <circle cx="115" cy="98" r="38" fill="url(#sunGrad)" />
+                                    <circle cx="115" cy="98" r="38" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="1.5" />
+                                </g>
+
+                                <!-- garage -->
+                                <rect x="360" y="360" width="360" height="188" rx="4" fill="url(#garageGrad)" stroke="rgba(255,255,255,.08)" />
+                                <rect x="352" y="352" width="376" height="12" rx="3" fill="#46557a" />
+                                <rect x="392" y="402" width="116" height="138" rx="5" fill="#141d31" stroke="rgba(255,255,255,.08)" />
+                                <rect x="582" y="402" width="116" height="138" rx="5" fill="#141d31" stroke="rgba(255,255,255,.08)" />
+                                <g stroke="rgba(255,255,255,.05)" stroke-width="1.5">
+                                    <line x1="392" y1="437" x2="508" y2="437" />
+                                    <line x1="392" y1="472" x2="508" y2="472" />
+                                    <line x1="392" y1="507" x2="508" y2="507" />
+                                    <line x1="582" y1="437" x2="698" y2="437" />
+                                    <line x1="582" y1="472" x2="698" y2="472" />
+                                    <line x1="582" y1="507" x2="698" y2="507" />
+                                </g>
+
+                                <!-- house -->
+                                <rect x="720" y="292" width="205" height="256" rx="4" fill="url(#bodyGrad)" stroke="rgba(255,255,255,.08)" />
+                                <path d="M822 208 L950 302 L694 302 Z" fill="url(#roofGrad)" stroke="rgba(255,255,255,.10)" stroke-linejoin="round" />
+                                <!-- rooftop solar panels -->
+                                <g>
+                                    <path d="M806 250 L872 250 L892 292 L826 292 Z" fill="#14324f" stroke="#2f6ea0" stroke-width="1.2" />
+                                    <path d="M828 250 L848 292 M850 250 L870 292" stroke="#2f6ea0" stroke-width="1" opacity=".85" />
+                                    <path d="M816 271 L882 271" stroke="#2f6ea0" stroke-width="1" opacity=".85" />
+                                </g>
+                                <!-- door + windows -->
+                                <rect x="800" y="470" width="44" height="78" rx="3" fill="#141d31" />
+                                <circle cx="836" cy="510" r="2.4" fill="#ffd98a" />
+                                <rect x="758" y="330" width="34" height="30" rx="3" fill="#4a92d8" opacity=".32" />
+                                <rect x="884" y="330" width="34" height="30" rx="3" fill="#4a92d8" opacity=".32" />
+
+                                <!-- cars (rear view; tapered greenhouse + fender haunches so they read as cars, not boxes) -->
+                                <!-- Model 3 (red sedan): ~1.28:1, glass roof greenhouse tapering into a haunched body -->
+                                <!-- 2019 Tesla Model 3: rear view -->
+                                <g id="carModel3" transform="translate(67.5, 82.2) scale(0.85)">
+                                    <defs>
+                                        <linearGradient id="model3Red" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0" stop-color="#f43a2e" />
+                                            <stop offset="0.48" stop-color="#d71b18" />
+                                            <stop offset="1" stop-color="#a50f13" />
+                                        </linearGradient>
+                                        <linearGradient id="model3Glass" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0" stop-color="#354760" />
+                                            <stop offset="1" stop-color="#111a2a" />
+                                        </linearGradient>
+                                        <linearGradient id="model3Lower" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0" stop-color="#383e46" />
+                                            <stop offset="1" stop-color="#12161b" />
+                                        </linearGradient>
+                                    </defs>
+
+                                    <!-- Side mirrors -->
+                                    <path d="M386 480 Q377 478 370 482 Q367 485 369 490 L384 492 Z"
+                                          fill="#d7dce2" stroke="#111820" stroke-width="1" />
+                                    <path d="M514 480 Q523 478 530 482 Q533 485 531 490 L516 492 Z"
+                                          fill="#d7dce2" stroke="#111820" stroke-width="1" />
+
+                                    <!-- Rear tires -->
+                                    <path d="M382 514 L401 514 L402 540 Q400 548 391 548 Q382 547 382 539 Z"
+                                          fill="#171b20" stroke="#090c10" stroke-width="0.8" />
+                                    <path d="M499 514 L518 514 L518 539 Q518 547 509 548 Q500 548 498 540 Z"
+                                          fill="#171b20" stroke="#090c10" stroke-width="0.8" />
+                                    <path d="M386 519 L386 543 M391 518 L391 546 M396 518 L396 543"
+                                          stroke="#40464d" stroke-width="0.65" opacity="0.8" />
+                                    <path d="M504 518 L504 543 M509 518 L509 546 M514 519 L514 543"
+                                          stroke="#40464d" stroke-width="0.65" opacity="0.8" />
+
+                                    <!-- Main body -->
+                                    <path d="M407 454
+             Q421 447 438 446
+             L462 446
+             Q479 447 493 454
+             Q501 461 505 474
+             L509 484
+             Q516 490 519 501
+             L520 523
+             Q520 536 510 542
+             Q504 546 493 546
+             L407 546
+             Q396 546 390 542
+             Q380 536 380 523
+             L381 501
+             Q384 490 391 484
+             L395 474
+             Q399 461 407 454 Z"
+                                          fill="url(#model3Red)"
+                                          stroke="#5c080c"
+                                          stroke-width="1" />
+
+                                    <!-- Side shading -->
+                                    <path d="M392 484 Q384 493 384 510 L384 527 Q386 538 396 542 L406 544 Q400 531 400 513 Q400 478 411 454 Q402 463 397 475 Z"
+                                          fill="#720b10" opacity="0.31" />
+                                    <path d="M508 484 Q516 493 516 510 L516 527 Q514 538 504 542 L494 544 Q500 531 500 513 Q500 478 489 454 Q498 463 503 475 Z"
+                                          fill="#59070b" opacity="0.23" />
+
+                                    <!-- Black roof surround -->
+                                    <path d="M407 454
+             Q422 447 439 447
+             L461 447
+             Q478 447 493 454
+             L490 476
+             Q488 485 478 488
+             Q450 492 422 488
+             Q412 485 410 476 Z"
+                                          fill="#15191f"
+                                          stroke="#090c10"
+                                          stroke-width="0.8" />
+
+                                    <!-- Rear glass -->
+                                    <path d="M412 456
+             Q425 451 440 451
+             L460 451
+             Q475 451 488 456
+             L485 473
+             Q484 480 476 483
+             Q450 487 424 483
+             Q416 480 415 473 Z"
+                                          fill="url(#model3Glass)"
+                                          stroke="#4c596d"
+                                          stroke-width="0.65" />
+
+                                    <!-- Glass details -->
+                                    <path d="M418 458 Q430 453 443 453 L435 482 Q426 482 420 479 Q417 476 418 458 Z"
+                                          fill="#8290a3" opacity="0.14" />
+                                    <path d="M469 453 Q482 456 485 463"
+                                          fill="none" stroke="rgba(255,255,255,.15)" stroke-width="0.8" />
+                                    <path d="M416 467 Q450 471 484 467
+             M415 473 Q450 477 485 473
+             M416 479 Q450 483 484 479"
+                                          fill="none" stroke="rgba(255,255,255,.055)" stroke-width="0.45" />
+
+                                    <!-- Trunk crown -->
+                                    <path d="M390 489 Q420 481 450 481 Q480 481 510 489"
+                                          fill="none" stroke="#68090c" stroke-width="1.1" />
+                                    <path d="M392 488 Q420 484 450 484 Q480 484 508 488"
+                                          fill="none" stroke="rgba(255,255,255,.09)" stroke-width="0.7" />
+
+                                    <!-- Left taillight -->
+                                    <path d="M385 490
+             Q388 486 395 486
+             L417 488
+             Q426 489 433 494
+             L428 502
+             Q410 505 391 502
+             Q386 500 385 495 Z"
+                                          fill="#181b20" stroke="#080a0d" stroke-width="0.75" />
+                                    <path d="M389 491
+             Q392 488 398 488
+             L416 490
+             Q424 490 429 494
+             L426 498
+             Q410 501 394 498
+             Q390 498 389 495 Z"
+                                          fill="none" stroke="#ff6749" stroke-width="1.45" stroke-linejoin="round" />
+                                    <path d="M397 492 L417 494 Q422 494 426 496"
+                                          fill="none" stroke="#cbd0d4" stroke-width="0.95" stroke-linecap="round" />
+                                    <path d="M391 500 Q410 503 428 500"
+                                          fill="none" stroke="#d74735" stroke-width="1" />
+
+                                    <!-- Right taillight -->
+                                    <path d="M515 490
+             Q512 486 505 486
+             L483 488
+             Q474 489 467 494
+             L472 502
+             Q490 505 509 502
+             Q514 500 515 495 Z"
+                                          fill="#181b20" stroke="#080a0d" stroke-width="0.75" />
+                                    <path d="M511 491
+             Q508 488 502 488
+             L484 490
+             Q476 490 471 494
+             L474 498
+             Q490 501 506 498
+             Q510 498 511 495 Z"
+                                          fill="none" stroke="#ff6749" stroke-width="1.45" stroke-linejoin="round" />
+                                    <path d="M503 492 L483 494 Q478 494 474 496"
+                                          fill="none" stroke="#cbd0d4" stroke-width="0.95" stroke-linecap="round" />
+                                    <path d="M509 500 Q490 503 472 500"
+                                          fill="none" stroke="#d74735" stroke-width="1" />
+
+                                    <!-- Thin trim between lights -->
+                                    <path d="M428 501 Q450 503 472 501"
+                                          fill="none" stroke="#14171b" stroke-width="1.35" />
+
+                                    <!-- TESLA lettering -->
+                                    <text x="450" y="497.1"
+                                          text-anchor="middle"
+                                          font-family="Arial, Helvetica, sans-serif"
+                                          font-size="3.1"
+                                          font-weight="600"
+                                          letter-spacing="4.2"
+                                          fill="#eceef0">TESLA</text>
+
+                                    <!-- Trunk panel and license recess -->
+                                    <path d="M398 504
+             Q423 508 450 508
+             Q477 508 502 504
+             L500 520
+             Q499 528 491 531
+             Q472 534 450 534
+             Q428 534 409 531
+             Q401 528 400 520 Z"
+                                          fill="none" stroke="#6a0a0d" stroke-width="0.8" />
+                                    <rect x="426" y="507" width="48" height="21" rx="2.2"
+                                          fill="#bf1517" stroke="#62090c" stroke-width="0.8" />
+                                    <rect x="431" y="511" width="38" height="13" rx="1.2"
+                                          fill="#f2f3f0" stroke="#33393e" stroke-width="0.85" />
+                                    <circle cx="450" cy="517.5" r="2.7"
+                                            fill="none" stroke="#81878b" stroke-width="0.65" />
+                                    <circle cx="450" cy="517.5" r="0.7" fill="#979ca0" />
+
+                                    <!-- Model badge -->
+                                    <text x="480" y="517.5"
+                                          font-family="Arial, Helvetica, sans-serif"
+                                          font-size="2.1"
+                                          font-weight="600"
+                                          letter-spacing="0.2"
+                                          fill="#e5e7e9">MODEL 3</text>
+
+                                    <!-- Parking sensor -->
+                                    <circle cx="498" cy="526" r="1.1"
+                                            fill="none" stroke="rgba(255,255,255,.35)" stroke-width="0.4" />
+
+                                    <!-- Bumper seam -->
+                                    <path d="M386 526 Q414 532 450 532 Q486 532 514 526"
+                                          fill="none" stroke="#730d10" stroke-width="0.75" />
+
+                                    <!-- Rear reflectors -->
+                                    <path d="M397 533 Q409 530 423 532 L419 535 L400 535 Z"
+                                          fill="#d73630" stroke="#5b0d10" stroke-width="0.5" />
+                                    <path d="M503 533 Q491 530 477 532 L481 535 L500 535 Z"
+                                          fill="#d73630" stroke="#5b0d10" stroke-width="0.5" />
+
+                                    <!-- Lower valance -->
+                                    <path d="M391 535
+             Q415 538 450 538
+             Q485 538 509 535
+             L505 543
+             Q500 546 492 546
+             L408 546
+             Q400 546 395 543 Z"
+                                          fill="url(#model3Lower)"
+                                          stroke="#090c10"
+                                          stroke-width="0.7" />
+                                    <path d="M406 537 Q430 540 450 540 Q470 540 494 537"
+                                          fill="none" stroke="rgba(255,255,255,.09)" stroke-width="0.5" />
+                                    <path d="M420 542 Q435 543 442 542 Q450 540 458 542 Q465 543 480 542"
+                                          fill="none" stroke="#07090c" stroke-width="1.05" />
+                                </g>
+
+                                <!-- Model X (red SUV): ~1.19:1, tumblehome greenhouse, fender haunches, red side lights + chrome strip; 17% taller -->
+                                <!-- 2017 Tesla Model X: rear view -->
+                                <!-- 2017 Tesla Model X: rear view -->
+                                <g id="carModelX" transform="translate(559.75, 432.93) scale(0.535)" stroke-linejoin="round" stroke-linecap="round">
+                                    <defs>
+                                        <linearGradient id="mxBody" x1="0" y1="0" x2="0" y2="1">
+                                          <stop offset="0" stop-color="#f4201b"/>
+                                          <stop offset=".5" stop-color="#d90e0c"/>
+                                          <stop offset="1" stop-color="#b30809"/>
+                                        </linearGradient>
+                                        <linearGradient id="mxGlass" x1="0" y1="0" x2="0" y2="1">
+                                          <stop offset="0" stop-color="#3a3e44"/>
+                                          <stop offset="1" stop-color="#161a20"/>
+                                        </linearGradient>
+                                        <linearGradient id="mxValance" x1="0" y1="0" x2="0" y2="1">
+                                          <stop offset="0" stop-color="#34383d"/>
+                                          <stop offset="1" stop-color="#15181c"/>
+                                        </linearGradient>
+                                        <linearGradient id="mxLamp" x1="0" y1="0" x2="1" y2="0">
+                                          <stop offset="0" stop-color="#ffb18e"/>
+                                          <stop offset=".3" stop-color="#ff6543"/>
+                                          <stop offset="1" stop-color="#ff3023"/>
+                                        </linearGradient>
+                                      </defs>
+                                    <!-- rear tires -->
+                                    <path d="M37 160 L68 160 L67 201 Q65 213 53 215 Q40 214 38 202 Z"
+                                          fill="#30343a" stroke="#17191d" stroke-width="2"/>
+                                    <path d="M263 160 L232 160 L233 201 Q235 213 247 215 Q260 214 262 202 Z"
+                                          fill="#30343a" stroke="#17191d" stroke-width="2"/>
+
+                                    <g stroke="#555a60" stroke-width="1" opacity=".7">
+                                      <path d="M43 170 L43 207"/><path d="M50 166 L50 211"/><path d="M57 166 L57 211"/><path d="M64 170 L64 205"/>
+                                      <path d="M257 170 L257 207"/><path d="M250 166 L250 211"/><path d="M243 166 L243 211"/><path d="M236 170 L236 205"/>
+                                    </g>
+
+                                    <!-- side mirrors -->
+                                    <path d="M39 83 Q25 78 12 85 L8 100 Q23 104 41 98 Z"
+                                          fill="#f2f3f4" stroke="#34383e" stroke-width="2"/>
+                                    <path d="M261 83 Q275 78 288 85 L292 100 Q277 104 259 98 Z"
+                                          fill="#f2f3f4" stroke="#34383e" stroke-width="2"/>
+
+                                    <!-- body shell: flatter, more technical-template proportions -->
+                                    <path d="M68 40
+                                             L232 40
+                                             L241 75
+                                             L258 91
+                                             L262 109
+                                             L262 168
+                                             L255 187
+                                             L240 199
+                                             L214 205
+                                             L86 205
+                                             L60 199
+                                             L45 187
+                                             L38 168
+                                             L38 109
+                                             L42 91
+                                             L59 75 Z"
+                                          fill="url(#mxBody)" stroke="#24272c" stroke-width="2.2"/>
+
+                                    <!-- subtle straight shoulder panels -->
+                                    <path d="M61 74 L43 90 L39 110 L39 167 L46 185 L61 197 L70 193 L70 91 Z"
+                                          fill="#b80a0b" opacity=".35"/>
+                                    <path d="M239 74 L257 90 L261 110 L261 167 L254 185 L239 197 L230 193 L230 91 Z"
+                                          fill="#980608" opacity=".25"/>
+
+                                    <!-- flatter roof panel -->
+                                    <path d="M71 26
+                                             L229 26
+                                             L225 58
+                                             L75 58 Z"
+                                          fill="#2c2f34" stroke="#1d2024" stroke-width="2"/>
+
+                                    <!-- rear glass: squared trapezoid -->
+                                    <path d="M79 32
+                                             L221 32
+                                             L217 69
+                                             Q215 79 203 83
+                                             Q180 87 150 87
+                                             Q120 87 97 83
+                                             Q85 79 83 69 Z"
+                                          fill="url(#mxGlass)" stroke="#16191e" stroke-width="2"/>
+
+                                    <!-- glass highlight -->
+                                    <path d="M89 38 L211 38 L208 49 Q181 45 150 45 Q119 45 92 49 Z"
+                                          fill="#ffffff" opacity=".08"/>
+
+                                    <!-- defroster lines -->
+                                    <g fill="none" stroke="#7c828a" stroke-width=".65" opacity=".4">
+                                      <path d="M82 49 Q112 43 150 43 Q188 43 218 49"/>
+                                      <path d="M81 56 Q112 50 150 50 Q188 50 219 56"/>
+                                      <path d="M80 63 Q112 57 150 57 Q188 57 220 63"/>
+                                      <path d="M80 70 Q112 65 150 65 Q188 65 220 70"/>
+                                    </g>
+
+                                    <!-- spoiler / glass lower edge -->
+                                    <path d="M63 84
+                                             Q101 89 150 89
+                                             Q199 89 237 84
+                                             L237 94
+                                             Q198 98 150 98
+                                             Q102 98 63 94 Z"
+                                          fill="#980608" stroke="#2a0809" stroke-width="1.4"/>
+                                    <path d="M66 92 Q107 96 150 96 Q193 96 234 92"
+                                          fill="none" stroke="#15171b" stroke-width="4"/>
+
+                                    <!-- hatch / trunk panel -->
+                                    <path d="M45 103
+                                             L255 103
+                                             L252 151
+                                             Q251 162 240 168
+                                             Q215 175 150 175
+                                             Q85 175 60 168
+                                             Q49 162 48 151 Z"
+                                          fill="#d20b0c" stroke="#760609" stroke-width="2"/>
+
+                                    <!-- left taillight -->
+                                    <path d="M39 93
+                                             Q53 87 78 88
+                                             Q102 89 121 99
+                                             L113 112
+                                             L46 113
+                                             Q39 108 38 101 Z"
+                                          fill="#2b1d21" stroke="#171115" stroke-width="2"/>
+                                    <path d="M43 96 Q59 91 78 92 Q99 93 114 100 L110 105 L48 106 Q43 103 43 96 Z"
+                                          fill="none" stroke="url(#mxLamp)" stroke-width="3"/>
+                                    <path d="M49 99 L108 103" fill="none" stroke="#c8ccd0" stroke-width="2"/>
+                                    <path d="M49 103 L108 107" fill="none" stroke="#666c73" stroke-width="1.5"/>
+
+                                    <!-- right taillight -->
+                                    <path d="M261 93
+                                             Q247 87 222 88
+                                             Q198 89 179 99
+                                             L187 112
+                                             L254 113
+                                             Q261 108 262 101 Z"
+                                          fill="#2b1d21" stroke="#171115" stroke-width="2"/>
+                                    <path d="M257 96 Q241 91 222 92 Q201 93 186 100 L190 105 L252 106 Q257 103 257 96 Z"
+                                          fill="none" stroke="url(#mxLamp)" stroke-width="3"/>
+                                    <path d="M251 99 L192 103" fill="none" stroke="#c8ccd0" stroke-width="2"/>
+                                    <path d="M251 103 L192 107" fill="none" stroke="#666c73" stroke-width="1.5"/>
+
+                                    <!-- central light bridge -->
+                                    <path d="M112 107 Q130 109 150 109 Q170 109 188 107"
+                                          fill="none" stroke="#ff5b3b" stroke-width="2"/>
+
+                                    <!-- Tesla lettering -->
+                                    <g fill="#edf0f2" font-family="Arial, Helvetica, sans-serif" font-size="6" font-weight="600" text-anchor="middle">
+                                      <text x="124" y="121">T</text><text x="137" y="121">E</text><text x="150" y="121">S</text><text x="163" y="121">L</text><text x="176" y="121">A</text>
+                                    </g>
+
+                                    <!-- plate recess and plate -->
+                                    <path d="M117 125 Q150 128 183 125 L181 149 Q150 152 119 149 Z"
+                                          fill="#a0080a" stroke="#660506" stroke-width="1.2"/>
+                                    <rect x="128" y="129" width="44" height="17" rx="1.5" fill="#eef0f1" stroke="#63696e" stroke-width="1.3"/>
+                                    <rect x="132" y="132" width="36" height="11" rx="1" fill="#fafafa" stroke="#adb2b5" stroke-width=".8"/>
+                                    <circle cx="150" cy="137.5" r="3.3" fill="none" stroke="#8e9498" stroke-width=".8"/>
+                                    <path d="M147.5 136.5 Q150 135 152.5 136.5 M150 136 L150 140"
+                                          fill="none" stroke="#8e9498" stroke-width=".8"/>
+
+                                    <!-- model badge -->
+                                    <text x="211" y="143" font-family="Arial, Helvetica, sans-serif" font-size="5" font-weight="600" fill="#e3e5e7">MODEL X</text>
+
+                                    <!-- parking sensors -->
+                                    <g fill="none" stroke="#f3a0a2" stroke-width=".7" opacity=".65">
+                                      <circle cx="56" cy="158" r="2"/><circle cx="244" cy="158" r="2"/>
+                                      <circle cx="92" cy="166" r="2"/><circle cx="208" cy="166" r="2"/>
+                                    </g>
+
+                                    <!-- flat red bumper -->
+                                    <path d="M39 157 Q87 166 150 166 Q213 166 261 157 L259 181 L246 195 Q218 202 150 202 Q82 202 54 195 L41 181 Z"
+                                          fill="#b8080a" opacity=".48"/>
+
+                                    <!-- reflectors -->
+                                    <path d="M54 173 Q76 169 101 171 L96 177 L59 177 Z" fill="#ff3c2f" stroke="#531013" stroke-width="1.2"/>
+                                    <path d="M246 173 Q224 169 199 171 L204 177 L241 177 Z" fill="#ff3c2f" stroke="#531013" stroke-width="1.2"/>
+
+                                    <!-- broad, nearly rectangular lower valance -->
+                                    <path d="M49 178 Q91 183 150 183 Q209 183 251 178 L247 200 Q211 206 150 206 Q89 206 53 200 Z"
+                                          fill="url(#mxValance)" stroke="#15171a" stroke-width="2"/>
+                                    <path d="M67 189 Q108 193 150 193 Q192 193 233 189"
+                                          fill="none" stroke="#111317" stroke-width="2"/>
+                                    <path d="M92 184 L88 198 M121 186 L118 203 M179 186 L182 203 M208 184 L212 198"
+                                          fill="none" stroke="#24272b" stroke-width="2"/>
+
+                                    <!-- restrained body highlights -->
+                                    <path d="M56 55 L45 91" fill="none" stroke="#ff827a" stroke-width="2" opacity=".35"/>
+                                    <path d="M244 55 L255 91" fill="none" stroke="#ff827a" stroke-width="2" opacity=".35"/>
+                                    <path d="M66 151 Q106 158 150 158 Q194 158 234 151"
+                                          fill="none" stroke="#ff5d54" stroke-width="2" opacity=".22"/>
+
+
+                                </g>
+
+                                <!-- wall connectors -->
+                                <rect x="366" y="430" width="14" height="26" rx="3" fill="#223047" stroke="rgba(255,255,255,.12)" />
+                                <rect x="536" y="430" width="14" height="26" rx="3" fill="#223047" stroke="rgba(255,255,255,.12)" />
+
+                                <!-- Powerwall (mounted on the garage side wall) -->
+                                <g>
+                                    <rect x="318" y="402" width="40" height="118" rx="14" fill="url(#pwGrad)" />
+                                    <rect x="318" y="402" width="40" height="118" rx="14" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1" />
+                                    <rect x="326" y="450" width="24" height="60" rx="4" fill="#2dd36f" opacity=".18" />
+                                    <circle cx="338" cy="420" r="4" fill="#c2402e" />
+                                </g>
+
+                                <!-- grid transmission tower (steel lattice truss) -->
+                                <g fill="none" stroke="#8fa0bb" stroke-linecap="round" stroke-linejoin="round">
+                                    <!-- outer chords (tapered body + splayed base) -->
+                                    <g stroke-width="2.2">
+                                        <path d="M973 548 L984 500 L995 450 L1001 380 L1005 320 L1007 270 L1009 232 L1012 196 L1014 182" />
+                                        <path d="M1077 548 L1066 500 L1055 450 L1049 380 L1045 320 L1043 270 L1041 232 L1038 196 L1036 182" />
+                                    </g>
+                                    <!-- crown (peak + shield-wire posts) -->
+                                    <g stroke-width="1.8">
+                                        <path d="M1014 182 L1025 139 L1036 182" />
+                                        <path d="M1025 139 L1025 182" />
+                                        <path d="M1009 167 L1015 182 M1041 167 L1035 182" />
+                                        <path d="M1009 167 L1009 160 M1041 167 L1041 160" />
+                                    </g>
+                                    <!-- horizontal belts -->
+                                    <g stroke-width="1.5">
+                                        <path d="M1014 182 L1036 182" />
+                                        <path d="M1012 196 L1038 196" />
+                                        <path d="M1009 232 L1041 232" />
+                                        <path d="M1007 270 L1043 270" />
+                                        <path d="M1005 320 L1045 320" />
+                                        <path d="M1001 380 L1049 380" />
+                                        <path d="M995 450 L1055 450" />
+                                        <path d="M984 500 L1066 500" />
+                                    </g>
+                                    <!-- X cross-bracing -->
+                                    <g stroke-width="1.3" opacity=".9">
+                                        <path d="M1014 182 L1038 196 M1036 182 L1012 196" />
+                                        <path d="M1012 196 L1041 232 M1038 196 L1009 232" />
+                                        <path d="M1009 232 L1043 270 M1041 232 L1007 270" />
+                                        <path d="M1007 270 L1045 320 M1043 270 L1005 320" />
+                                        <path d="M1005 320 L1049 380 M1045 320 L1001 380" />
+                                        <path d="M1001 380 L1055 450 M1049 380 L995 450" />
+                                        <path d="M995 450 L1066 500 M1055 450 L984 500" />
+                                        <path d="M984 500 L1077 548 M1066 500 L973 548" />
+                                    </g>
+                                    <!-- conductor crossarms -->
+                                    <g stroke-width="1.5">
+                                        <path d="M1012 201 L985 208 L1010 215" />
+                                        <path d="M1038 201 L1065 208 L1040 215" />
+                                        <path d="M1012 208 L995 208 M1038 208 L1055 208" />
+                                        <path d="M1009 240 L976 249 L1008 258" />
+                                        <path d="M1041 240 L1074 249 L1042 258" />
+                                        <path d="M1009 249 L991 249 M1041 249 L1059 249" />
+                                    </g>
+                                    <!-- insulator strings -->
+                                    <g stroke-width="1.2">
+                                        <path d="M985 208 L985 219 M1065 208 L1065 219" />
+                                        <path d="M976 249 L976 261 M1074 249 L1074 261" />
+                                    </g>
+                                    <g fill="#8fa0bb" stroke="none">
+                                        <circle cx="985" cy="222" r="2.1" />
+                                        <circle cx="1065" cy="222" r="2.1" />
+                                        <circle cx="976" cy="264" r="2.1" />
+                                        <circle cx="1074" cy="264" r="2.1" />
+                                        <circle cx="985" cy="214" r="1.2" />
+                                        <circle cx="1065" cy="214" r="1.2" />
+                                        <circle cx="976" cy="255" r="1.2" />
+                                        <circle cx="1074" cy="255" r="1.2" />
+                                        <circle cx="1009" cy="159" r="1.3" />
+                                        <circle cx="1041" cy="159" r="1.3" />
+                                    </g>
+                                    <!-- footings -->
+                                    <g stroke-width="2.2">
+                                        <path d="M967 548 L979 548 M1071 548 L1083 548" />
+                                    </g>
+                                </g>
+
+                                <!-- cables (base + animated energy flow). Each path is drawn house -> device. -->
+                                <path class="cable" d="M795 250 C 715 210, 645 172, 567 147" />
+                                <path class="cable-flow" id="flowSolar" d="M795 250 C 715 210, 645 172, 567 147" />
+                                <path class="cable" d="M918 296 C 950 260, 975 232, 995 205" />
+                                <path class="cable-flow" id="flowGrid" d="M918 296 C 950 260, 975 232, 995 205" />
+                                <path class="cable" d="M700 352 C 560 338, 430 338, 340 398" />
+                                <path class="cable-flow" id="flowPw" d="M700 352 C 560 338, 430 338, 340 398" />
+                                <path class="cable" d="M373 452 C 392 486, 410 496, 428 500" />
+                                <path class="cable-flow" id="flowCar1" d="M373 452 C 392 486, 410 496, 428 500" />
+                                <path class="cable" d="M543 452 C 566 486, 592 498, 616 500" />
+                                <path class="cable-flow" id="flowCar2" d="M543 452 C 566 486, 592 498, 616 500" />
+                            </svg>
+
+                        <!-- overlays: left/top are stage px, which equal the SVG viewBox coordinates -->
+                        <div class="ov flow-node node-solar" style="left: 550px; top: 200px;">
+                            <div class="flow-node-value" id="flowSolarValue">-- kW</div>
+                            <div class="flow-node-label">Solar</div>
                         </div>
-                    </div>
-
-                    <!-- Sun icon for solar -->
-                    <div class="sun-container">
-                        <div class="sun-icon">
-                            <div class="sun-power" id="flowSolarValue">6.5 kW</div>
+                        <div class="ov flow-node node-home" style="left: 822px; top: 400px;">
+                            <div class="flow-node-value" id="flowHomeValue">-- kW</div>
+                            <div class="flow-node-label">Home</div>
                         </div>
-                    </div>
+                        <div class="ov flow-node node-grid" style="left: 930px; top: 180px;">
+                            <div class="flow-node-value" id="flowGridValue">0 kW</div>
+                            <div class="flow-node-label" id="flowGridLabel">GRID</div>
+                        </div>
 
-                    <!-- Tesla vehicles on the left -->
-                    <div class="vehicles-container" style="width: 450px;">
-                        <table style="width: 450px;">
-                            <tr>
-                                <td style="width: 320px;">
-                                    <div class="tesla-vehicle">
-                                        <div class="card" style="width: 300px; padding: 15px;">
-                                            <div class="battery-level">
-                                                <div class="battery-info">
-                                                    <span id="model3Percent">--%</span>
-                                                    <span class="charge-connector" id="model3Connector" title="Not plugged in">
-                                                        <svg viewBox="0 0 48 24" xmlns="http://www.w3.org/2000/svg">
-                                                            <path class="connector-cable" d="M 46 4 C 34 4, 30 20, 18 20 L 12 20" fill="none" stroke-width="3" stroke-linecap="round" />
-                                                            <path class="connector-flow" d="M 46 4 C 34 4, 30 20, 18 20 L 12 20" fill="none" stroke-width="3" stroke-linecap="round" />
-                                                            <rect class="connector-head" x="3" y="15" width="9" height="10" rx="2" />
-                                                        </svg>
-                                                    </span>
-                                                    <span id="model3Kwh" class="kwh-display">-- kWh</span>
-                                                </div>
-                                                <div class="battery-bar-container">
-                                                    <div class="battery-bar gradient-bar">
-                                                        <div class="battery-fill" id="model3Bar" style="width: 0%"></div>
-                                                        <div class="charge-limit-marker" id="model3Limit"></div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div style="margin-top: 10px; font-size: 0.9rem; color: #ccc;">
-                                                <div>Status: <span id="model3Status">--</span></div>
-                                                <div>Range: <span id="model3Range">-- mi</span></div>
-                                                <div class="stale-info" id="model3StaleInfo" style="display: none;"></div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td style="width: 130px;">
-                                    <div id="model3Card" class="flow-energy-node2 flow-grid-node2">
-                                        <div class="flow-energy-value" id="flowGridValue"><span id="model3ChargingRate" style="white-space: nowrap;">-- kW</span></div>
-                                        <div style="font-size: 1rem; opacity: 0.8; color: #e91e63; font-weight: bold;">Model 3</div>
-                                    </div>
-                                </td>
-                            </tr>
-                            <tr style="height:50px;">
-                                <td></td>
-                                <td></td>
-                            </tr>
-                            <tr>
-                                <td style="width: 320px;">
-                                    <div class="tesla-vehicle">
-                                        <div class="card" style="width: 300px; padding: 15px;">
-                                            <div class="battery-level">
-                                                <div class="battery-info">
-                                                    <span id="modelXPercent">--%</span>
-                                                    <span class="charge-connector" id="modelXConnector" title="Not plugged in">
-                                                        <svg viewBox="0 0 48 24" xmlns="http://www.w3.org/2000/svg">
-                                                            <path class="connector-cable" d="M 46 4 C 34 4, 30 20, 18 20 L 12 20" fill="none" stroke-width="3" stroke-linecap="round" />
-                                                            <path class="connector-flow" d="M 46 4 C 34 4, 30 20, 18 20 L 12 20" fill="none" stroke-width="3" stroke-linecap="round" />
-                                                            <rect class="connector-head" x="3" y="15" width="9" height="10" rx="2" />
-                                                        </svg>
-                                                    </span>
-                                                    <span id="modelXKwh" class="kwh-display">-- kWh</span>
-                                                </div>
-                                                <div class="battery-bar-container">
-                                                    <div class="battery-bar gradient-bar">
-                                                        <div class="battery-fill" id="modelXBar" style="width: 0%"></div>
-                                                        <div class="charge-limit-marker" id="modelXLimit"></div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div style="margin-top: 10px; font-size: 0.9rem; color: #ccc;">
-                                                <div>Status: <span id="modelXStatus">--</span></div>
-                                                <div>Range: <span id="modelXRange">-- mi</span></div>
-                                                <div class="stale-info" id="modelXStaleInfo" style="display: none;"></div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td style="width: 130px;">
-                                    <div id="modelXCard" class="flow-energy-node2 flow-grid-node2">
-                                        <div class="flow-energy-value" id="flowGridValue"><span id="modelXChargingRate" style="white-space: nowrap;">-- kW</span></div>
-                                        <div style="font-size: 1rem; opacity: 0.8; color: #2196f3; font-weight: bold;">Model X</div>
-                                    </div>
-                                </td>
-                            </tr>
-                        </table>
-                    </div>
+                        <!-- Powerwall readout -->
+                        <div class="mini-card pw-card" style="left: 250px; top: 455px;">
+                            <div class="mc-head"><span class="mc-name">Powerwall</span><span class="mc-pct" id="powerwallPercent">--%</span></div>
+                            <div class="mc-bar"><div class="mc-fill" id="powerwallBar" style="width: 0%"></div></div>
+                            <div class="mc-sub"><b id="flowPowerwallValue">-- kW</b> · <span id="powerwallKwh">-- kWh</span></div>
+                        </div>
 
-                    <!-- Electrical tower for grid -->
-                    <div class="electrical-tower">
-                        <div class="tower-base"></div>
-                        <div class="tower-cross"></div>
-                        <div class="power-lines"></div>
-                    </div>
-
-                    <!-- Energy nodes -->
-                    <!-- Home consumption inside house -->
-                    <div class="flow-energy-node flow-home-node">
-                        <div class="flow-energy-value" id="flowHomeValue">0.3 kW</div>
-                        <div class="flow-energy-label">HOME</div>
-                    </div>
-
-                    <!-- Powerwall card + node at bottom center -->
-                    <div class="powerwall-container">
-                        <table style="width: 460px;">
-                            <tr>
-                                <td style="width: 310px;">
-                                    <div class="card" style="width: 300px; padding: 15px;">
-                                        <div class="battery-level">
-                                            <div class="battery-info">
-                                                <span id="powerwallPercent">--%</span>
-                                                <span id="powerwallKwh" class="kwh-display">-- kWh</span>
-                                            </div>
-                                            <div class="battery-bar-container">
-                                                <div class="battery-bar gradient-bar">
-                                                    <div class="battery-fill" id="powerwallBar" style="width: 0%"></div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div class="stale-info" id="powerwallStaleInfo" style="display: none;"></div>
-                                    </div>
-                                </td>
-                                <td style="width: 150px;">
-                                    <div class="flow-energy-node2 flow-grid-node2">
-                                        <div class="flow-energy-value" id="flowPowerwallValue" style="white-space: nowrap;">-- kW</div>
-                                        <div style="font-size: 1rem; opacity: 0.8; color: #00cc00; font-weight: bold;">Powerwall</div>
-                                    </div>
-                                </td>
-                            </tr>
-                        </table>
-                    </div>
-
-                    <!-- Grid next to electrical tower -->
-                    <div class="flow-energy-node flow-grid-node" style="right: 160px !important;">
-                        <div class="flow-energy-value" id="flowGridValue">0 kW</div>
-                        <div class="flow-energy-label" id="flowGridLabel">GRID</div>
+                        <!-- Vehicles -->
+                        <div class="mini-card" id="model3Card" style="left: 450px; top: 613px;">
+                            <div class="mc-head"><span class="mc-name" style="color: #ff7aa6;">Model 3</span><span class="mc-pct" id="model3Percent">--%</span></div>
+                            <div class="mc-bar"><div class="mc-fill" id="model3Bar" style="width: 0%"></div><div class="mc-limit" id="model3Limit"></div></div>
+                            <div class="mc-sub"><b id="model3ChargingRate">-- kW</b> · <span id="model3Kwh">-- kWh</span></div>
+                            <div class="mc-sub"><span id="model3Status">--</span> · <span id="model3Range">-- mi</span></div>
+                        </div>
+                        <div class="mini-card" id="modelXCard" style="left: 640px; top: 613px;">
+                            <div class="mc-head"><span class="mc-name" style="color: #5fb2ff;">Model X</span><span class="mc-pct" id="modelXPercent">--%</span></div>
+                            <div class="mc-bar"><div class="mc-fill" id="modelXBar" style="width: 0%"></div><div class="mc-limit" id="modelXLimit"></div></div>
+                            <div class="mc-sub"><b id="modelXChargingRate">-- kW</b> · <span id="modelXKwh">-- kWh</span></div>
+                            <div class="mc-sub"><span id="modelXStatus">--</span> · <span id="modelXRange">-- mi</span></div>
+                        </div>
+                        </div>
                     </div>
                 </div>
             </div>

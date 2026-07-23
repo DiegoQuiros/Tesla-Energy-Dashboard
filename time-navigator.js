@@ -17,9 +17,17 @@ class TimeNavigator {
         const container = document.createElement('div');
         container.id = 'timeNavigator';
         container.className = 'time-navigator-container';
+        // Start collapsed by default (small pill); remember the user's choice thereafter
+        if (this.readCollapsedPref()) container.classList.add('collapsed');
 
         container.innerHTML = `
             <div class="time-navigator-controls">
+                <button id="timeNavToggle" class="time-nav-toggle" type="button" aria-controls="timeNavigator" aria-expanded="false" title="Show time navigation">
+                    <span class="tnt-clock" aria-hidden="true">🕐</span>
+                    <span class="tnt-label" id="timeNavToggleLabel">Live Mode</span>
+                    <span class="tnt-badge live" id="timeNavToggleBadge">🔴 LIVE</span>
+                    <span class="tnt-chevron" aria-hidden="true">▾</span>
+                </button>
                 <button id="timeNavBack" class="time-nav-btn" title="Go back ${this.timeStep} minutes">
                     <span>⏪</span>
                 </button>
@@ -43,6 +51,9 @@ class TimeNavigator {
                     <label for="datePickerInput" class="calendar-label">Jump to date:</label>
                     <input type="date" id="datePickerInput" class="calendar-date-input" title="Select a date before today">
                 </div>
+                <button id="timeNavCollapse" class="time-nav-collapse" type="button" aria-controls="timeNavigator" aria-expanded="true" title="Collapse time navigation" aria-label="Collapse time navigation">
+                    <span aria-hidden="true">▴</span>
+                </button>
             </div>
         `;
 
@@ -57,6 +68,10 @@ class TimeNavigator {
         document.getElementById('timeNavForward').addEventListener('click', () => this.stepTime(this.timeStep));
         document.getElementById('timeNavForwardFast').addEventListener('click', () => this.stepTime(60));
         document.getElementById('timeNavLive').addEventListener('click', () => this.goToLiveMode());
+
+        // Collapse / expand the navigator
+        document.getElementById('timeNavToggle').addEventListener('click', () => this.setCollapsed(false));
+        document.getElementById('timeNavCollapse').addEventListener('click', () => this.setCollapsed(true));
 
         // Date picker event
         document.getElementById('datePickerInput').addEventListener('change', (e) => this.jumpToDate(e.target.value));
@@ -123,6 +138,34 @@ class TimeNavigator {
         this.notifyObservers();
     }
 
+    // Whether the navigator should start collapsed (small pill). Defaults to
+    // collapsed on first visit, then remembers the user's last choice.
+    readCollapsedPref() {
+        try {
+            const stored = localStorage.getItem('timeNavCollapsed');
+            return stored === null ? true : stored === 'true';
+        } catch (e) {
+            return true;
+        }
+    }
+
+    // Collapse to the pill or expand to the full control bar, and persist it
+    setCollapsed(collapsed) {
+        const container = document.getElementById('timeNavigator');
+        if (!container) return;
+
+        container.classList.toggle('collapsed', collapsed);
+
+        const toggleBtn = document.getElementById('timeNavToggle');
+        if (toggleBtn) toggleBtn.setAttribute('aria-expanded', String(!collapsed));
+
+        try {
+            localStorage.setItem('timeNavCollapsed', String(collapsed));
+        } catch (e) {
+            // ignore storage failures (e.g. private mode)
+        }
+    }
+
     jumpToDate(dateString) {
         if (!dateString) return;
 
@@ -175,12 +218,19 @@ class TimeNavigator {
         const timeDisplay = document.getElementById('timeDisplay');
         const modeIndicator = document.getElementById('timeModeIndicator');
         const controls = document.querySelector('.time-navigator-controls');
+        const toggleLabel = document.getElementById('timeNavToggleLabel');
+        const toggleBadge = document.getElementById('timeNavToggleBadge');
 
         if (this.isLiveMode) {
             timeDisplay.textContent = 'Live Mode';
             modeIndicator.textContent = '🔴 LIVE';
             modeIndicator.className = 'time-mode-indicator live';
             controls.classList.remove('historical-mode');
+            if (toggleLabel) toggleLabel.textContent = 'Live Mode';
+            if (toggleBadge) {
+                toggleBadge.textContent = '🔴 LIVE';
+                toggleBadge.className = 'tnt-badge live';
+            }
         } else {
             const displayTime = this.selectedTime.toLocaleString('en-US', {
                 weekday: 'short',
@@ -193,6 +243,11 @@ class TimeNavigator {
             modeIndicator.textContent = '⏸️ HISTORICAL';
             modeIndicator.className = 'time-mode-indicator historical';
             controls.classList.add('historical-mode');
+            if (toggleLabel) toggleLabel.textContent = displayTime;
+            if (toggleBadge) {
+                toggleBadge.textContent = '⏸️ HISTORICAL';
+                toggleBadge.className = 'tnt-badge historical';
+            }
         }
 
         // Update button states

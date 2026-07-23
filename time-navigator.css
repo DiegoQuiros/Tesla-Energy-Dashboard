@@ -20,6 +20,125 @@
     flex-wrap: wrap;
 }
 
+/* ---------- Collapsible navigator ---------- */
+
+/* Compact pill shown when collapsed (click to expand the full bar) */
+.time-nav-toggle {
+    display: none; /* only visible in the collapsed state */
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(145deg, #2a2a2a, #3a3a3a);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+    color: #ffffff;
+    cursor: pointer;
+    padding: 6px 14px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.35);
+    transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+    .time-nav-toggle:hover {
+        transform: translateY(-1px);
+        background: linear-gradient(145deg, #3a3a3a, #4a4a4a);
+        border-color: rgba(255, 255, 255, 0.35);
+    }
+
+    .time-nav-toggle:focus-visible {
+        outline: 2px solid #4a9eff;
+        outline-offset: 2px;
+    }
+
+.tnt-clock {
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.tnt-label {
+    color: #e8edf5;
+    white-space: nowrap;
+}
+
+.tnt-badge {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 2px 8px;
+    border-radius: 12px;
+    white-space: nowrap;
+}
+
+    .tnt-badge.live {
+        background: linear-gradient(145deg, #dc3545, #c82333);
+        color: #ffffff;
+    }
+
+    .tnt-badge.historical {
+        background: linear-gradient(145deg, #ffc107, #e0a800);
+        color: #000000;
+    }
+
+.tnt-chevron {
+    font-size: 0.7rem;
+    opacity: 0.75;
+}
+
+/* Small handle that collapses the bar again (shown only when expanded) */
+.time-nav-collapse {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+    color: #ffffff;
+    cursor: pointer;
+    padding: 6px 11px;
+    font-size: 0.85rem;
+    line-height: 1;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+    .time-nav-collapse:hover {
+        background: rgba(255, 255, 255, 0.12);
+        border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    .time-nav-collapse:focus-visible {
+        outline: 2px solid #4a9eff;
+        outline-offset: 2px;
+    }
+
+/* Collapsed: strip the heavy bar down to just the floating pill */
+.time-navigator-container.collapsed {
+    background: transparent;
+    box-shadow: none;
+    border: none;
+    backdrop-filter: none;
+    padding: 6px 16px;
+}
+
+    .time-navigator-container.collapsed .time-navigator-controls > *:not(.time-nav-toggle) {
+        display: none;
+    }
+
+    .time-navigator-container.collapsed .time-nav-toggle {
+        display: inline-flex;
+    }
+
+    /* Don't paint the historical tint around the lone pill when collapsed */
+    .time-navigator-container.collapsed .time-navigator-controls.historical-mode {
+        background: transparent;
+        border: none;
+        padding: 0;
+    }
+
+    /* Collapsed: float the lone pill to the far right (expanded bar stays centered) */
+    .time-navigator-container.collapsed .time-navigator-controls {
+        justify-content: flex-end;
+    }
+
 .time-nav-btn {
     background: linear-gradient(145deg, #2a2a2a, #3a3a3a);
     border: 1px solid rgba(255, 255, 255, 0.2);
@@ -149,6 +268,11 @@
 
 /* Mobile responsive */
 @media (max-width: 768px) {
+    /* Hide the time-navigator / Live Mode widget entirely on mobile */
+    .time-navigator-container {
+        display: none;
+    }
+
     .time-navigator-controls {
         gap: 10px;
     }

@@ -75,19 +75,28 @@ body {
 
 /* Battery Level Styling */
 .battery-level {
-    margin-bottom: 10px;
+    margin-bottom: 0;
 }
 
 .battery-info {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 10px;
+    margin-bottom: 11px;
+    gap: 8px;
 }
 
+    .battery-info .bpercent {
+        font-size: 1.18rem;
+        font-weight: 700;
+        color: #fff;
+        letter-spacing: 0.2px;
+    }
+
 .kwh-display {
-    font-size: 0.9rem;
-    color: white;
+    font-size: 0.86rem;
+    color: #9fb0c9;
+    font-weight: 600;
 }
 
 .battery-bar-container {
@@ -96,32 +105,35 @@ body {
 
 .battery-bar {
     width: 100%;
-    height: 16px;
-    background: #333;
-    border-radius: 0; /* Rectangular shape, no rounded edges */
+    height: 9px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
     overflow: hidden;
     position: relative;
 }
 
-/* Dark green track; the fill draws the charged portion on top */
+/* Subtle track; the fill draws the charged portion on top */
 .gradient-bar {
-    background: #003d00;
+    background: rgba(255, 255, 255, 0.08);
 }
 
 .battery-fill {
     height: 100%;
-    background: #00cc00;
-    transition: width 0.3s ease;
+    border-radius: 6px;
+    background: linear-gradient(90deg, #1fa85a 0%, #2dd36f 100%);
+    box-shadow: 0 0 10px rgba(45, 211, 111, 0.4);
+    transition: width 0.35s ease;
 }
 
 /* Vertical marker showing the configured charge limit */
 .charge-limit-marker {
     position: absolute;
-    top: -1px;
-    bottom: -1px;
+    top: -2px;
+    bottom: -2px;
     width: 2px;
-    background: #fff;
-    box-shadow: 0 0 3px rgba(0, 0, 0, 0.9);
+    background: rgba(255, 255, 255, 0.85);
+    border-radius: 1px;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
     transform: translateX(-1px);
     transition: left 0.3s ease;
     display: none;
@@ -609,257 +621,265 @@ body {
     }
 }
 
-/* Energy Flow Section Styles */
+/* ============================================================
+   Energy Flow Section  (house-scene redesign)
+   ============================================================ */
 .energy-flow-section {
     margin-bottom: 40px;
     background: linear-gradient(145deg, #1e1e1e, #2a2a2a);
     border-radius: 20px;
-    padding: 30px;
+    padding: 26px 30px 30px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-    .energy-flow-section h2 {
-        color: #ff6b35;
-        font-size: 1.8rem;
-        text-align: center;
-    }
-
-    .energy-flow-section .flow-visualization {
-        position: relative;
-        height: 600px;
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-        border-radius: 20px;
-        overflow: hidden;
-        margin-bottom: 30px;
-    }
-
-.house-container {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 200px;
-    height: 150px;
-}
-
-.house {
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(45deg, #2a2a2a 0%, #3a3a3a 50%, #2a2a2a 100%);
-    position: relative;
-    border-radius: 5px;
-}
-
-    .house::before {
-        content: '';
-        position: absolute;
-        top: -30px;
-        left: -10px;
-        width: 0;
-        height: 0;
-        border-left: 110px solid transparent;
-        border-right: 110px solid transparent;
-        border-bottom: 40px solid #4a4a4a;
-    }
-
-/* Tesla Vehicles */
-.vehicles-container {
-    position: absolute;
-    left: 30px;
-    top: 50%;
-    transform: translateY(-50%);
+/* Section header: title left, timestamp right (neutralizes the global gradient .header) */
+.energy-flow-section .header {
     display: flex;
-    flex-direction: column;
-    gap: 40px;
-    width: 300px;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 18px;
+    background: none;
+    -webkit-background-clip: border-box;
+    background-clip: border-box;
+    -webkit-text-fill-color: initial;
 }
 
+    .energy-flow-section h2 {
+        color: #f4f6fb;
+        font-size: 1.35rem;
+        font-weight: 650;
+        letter-spacing: 0.2px;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+    }
 
-.battery-percentage {
+        .energy-flow-section h2 .spark {
+            font-size: 1.15rem;
+            filter: drop-shadow(0 0 6px rgba(255, 176, 31, 0.5));
+        }
+
+    .energy-flow-section .last-updated {
+        color: #7c8aa5;
+        font-size: 0.82rem;
+        font-weight: 500;
+    }
+
+/* Responsive stage: laid out in a fixed 1100x600 space, scaled to fit its container */
+.energy-flow-section .flow-visualization {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 11 / 5.6;
+    overflow: hidden;
+    margin-bottom: 30px;
+    background: radial-gradient(125% 135% at 50% 16%, #26324f 0%, #172339 46%, #0a1120 100%);
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 0 70px rgba(0, 0, 0, 0.4);
+}
+
+.flow-stage {
     position: absolute;
-    top: 50%;
-    left: 50%;
+    top: 0;
+    left: 0;
+    width: 1100px;
+    height: 600px;
+    transform-origin: top left;
+}
+
+/* Uniformly shrink the whole scene (illustration + overlay cards) to 90%,
+   scaled about its center so all internal alignment is preserved. */
+.scene-inner {
+    position: absolute;
+    inset: 0;
+    transform: translateY(-85px) scale(0.9);
+    transform-origin: 50% 50%;
+}
+
+.scene {
+    position: absolute;
+    inset: 0;
+    display: block;
+}
+
+/* Cables + animated energy flow */
+.cable {
+    fill: none;
+    stroke: rgba(150, 172, 205, 0.20);
+    stroke-width: 3;
+    stroke-linecap: round;
+}
+
+.cable-flow {
+    fill: none;
+    stroke-width: 3.4;
+    stroke-linecap: round;
+    stroke-dasharray: 3 15;
+    opacity: 0;
+}
+
+    .cable-flow.active {
+        opacity: 1;
+        animation: cable-flow 1s linear infinite;
+    }
+
+    .cable-flow.reverse {
+        animation-direction: reverse;
+    }
+
+@keyframes cable-flow {
+    from { stroke-dashoffset: 0; }
+    to { stroke-dashoffset: -18; }
+}
+
+/* Overlay pills (left/top are stage px, which equal the SVG viewBox coordinates) */
+.ov {
+    position: absolute;
     transform: translate(-50%, -50%);
-    font-size: 0.7rem;
-    font-weight: bold;
-    color: white;
-    text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+    z-index: 12;
+}
+
+.flow-node {
+    background: rgba(10, 16, 30, 0.72);
+    border: 1.5px solid rgba(255, 255, 255, 0.14);
+    border-radius: 13px;
+    padding: 7px 13px;
+    text-align: center;
+    min-width: 64px;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.36);
+}
+
+.flow-node-value {
+    font-size: 17px;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.12;
+    letter-spacing: 0.2px;
+    white-space: nowrap;
+}
+
+.flow-node-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: #93a3bd;
+    margin-top: 2px;
+}
+
+.node-solar {
+    border-color: rgba(255, 176, 31, 0.55);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.36), 0 0 20px rgba(255, 176, 31, 0.14);
+}
+
+    .node-solar .flow-node-value {
+        color: #ffd979;
+    }
+
+.node-home {
+    border-color: rgba(167, 139, 250, 0.6);
+    background: rgba(33, 26, 55, 0.74);
+}
+
+    .node-home .flow-node-value {
+        color: #c9b8ff;
+    }
+
+.node-grid {
+    border-color: rgba(91, 157, 255, 0.55);
+    background: rgba(13, 28, 52, 0.72);
+}
+
+    .node-grid .flow-node-value {
+        color: #8fc0ff;
+    }
+
+/* Mini cards (Powerwall + vehicles) */
+.mini-card {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    z-index: 12;
+    width: 156px;
+    background: linear-gradient(160deg, rgba(32, 42, 64, 0.92), rgba(17, 25, 43, 0.94));
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 13px;
+    padding: 9px 12px;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.42);
+    backdrop-filter: blur(12px);
+}
+
+.mc-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px;
+}
+
+.mc-name {
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.mc-pct {
+    font-size: 15px;
+    font-weight: 700;
+    color: #fff;
+}
+
+.mc-bar {
+    width: 100%;
+    height: 7px;
+    background: rgba(255, 255, 255, 0.09);
+    border-radius: 5px;
+    overflow: hidden;
+    position: relative;
+    margin: 7px 0 6px;
+}
+
+.mc-fill {
+    height: 100%;
+    border-radius: 5px;
+    background: linear-gradient(90deg, #1fa85a, #2dd36f);
+    box-shadow: 0 0 8px rgba(45, 211, 111, 0.4);
+    transition: width 0.35s ease;
+}
+
+.mc-limit {
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    width: 2px;
+    background: rgba(255, 255, 255, 0.85);
+    transform: translateX(-1px);
+    display: none;
     z-index: 2;
 }
 
-/* Sun Icon */
-.sun-container {
-    position: absolute;
-    top: 40px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 80px;
-    height: 80px;
+.mc-sub {
+    font-size: 11.5px;
+    color: #9fb0c9;
+    line-height: 1.55;
 }
 
-.sun-icon {
-    width: 100%;
-    height: 100%;
-    background: radial-gradient(circle, #ffd54f 30%, #ffb300 70%);
-    border-radius: 50%;
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 0 20px rgba(255, 193, 7, 0.6);
-}
-
-    .sun-icon::before {
-        content: '';
-        position: absolute;
-        width: 100px;
-        height: 100px;
-        background: linear-gradient(0deg, transparent 46%, #ffc107 50%, transparent 54%), linear-gradient(45deg, transparent 46%, #ffc107 50%, transparent 54%), linear-gradient(90deg, transparent 46%, #ffc107 50%, transparent 54%), linear-gradient(135deg, transparent 46%, #ffc107 50%, transparent 54%);
-        border-radius: 50%;
-        transform: scale(1.2);
-        opacity: 0.7;
-        z-index: -1;
+    .mc-sub b {
+        color: #e6ecf5;
+        font-weight: 600;
     }
 
-.sun-power {
-    font-size: 0.9rem;
-    font-weight: bold;
-    color: #333;
-    text-shadow: 1px 1px 2px rgba(255,255,255,0.5);
+.pw-card {
+    width: 132px;
 }
 
-/* Electrical Tower */
-.electrical-tower {
-    position: absolute;
-    right: 60px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 60px;
-    height: 80px;
-}
-
-.tower-base {
-    position: absolute;
-    bottom: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 8px;
-    height: 60px;
-    background: linear-gradient(180deg, #666 0%, #444 100%);
-}
-
-.tower-cross {
-    position: absolute;
-    top: 10px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 50px;
-    height: 4px;
-    background: #555;
-    border-radius: 2px;
-}
-
-    .tower-cross::before {
-        content: '';
-        position: absolute;
-        top: 8px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 40px;
-        height: 3px;
-        background: #555;
-        border-radius: 2px;
+    .pw-card .mc-name {
+        color: #5fe08c;
     }
 
-    .tower-cross::after {
-        content: '';
-        position: absolute;
-        top: 15px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 30px;
-        height: 3px;
-        background: #555;
-        border-radius: 2px;
-    }
-
-.power-lines {
-    position: absolute;
-    top: 12px;
-    left: -20px;
-    width: 100px;
-    height: 2px;
-    background: repeating-linear-gradient( 90deg, transparent 0px, transparent 8px, #888 8px, #888 10px );
-}
-
-/* Powerwall card + node at bottom center */
-.powerwall-container {
-    position: absolute;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 10;
-}
-
-.flow-energy-node {
-    position: absolute;
-    background: rgba(0, 0, 0, 0.8);
-    border-radius: 12px;
-    padding: 8px 12px;
-    text-align: center;
-    border: 2px solid;
-    backdrop-filter: blur(10px);
-    min-width: 60px;
-    z-index: 10;
-}
-
-.flow-energy-node2 {
-    background: rgba(0, 0, 0, 0.8);
-    border-radius: 12px;
-    padding: 8px 12px;
-    text-align: center;
-    border: 2px solid;
-    backdrop-filter: blur(10px);
-    min-width: 60px;
-    z-index: 10;
-}
-
-.flow-home-node {
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    border-color: #9f7aea;
-    background: rgba(159, 122, 234, 0.15);
-    font-size: 0.8rem;
-}
-
-.flow-grid-node {
-    top: 50%;
-    right: 20px;
-    transform: translateY(-50%);
-    border-color: #4a9eff;
-    background: rgba(74, 158, 255, 0.15);
-}
-
-.flow-grid-node2 {
-    top: 35%;
-    right: 20px;
-    border-color: #4a9eff;
-    background: rgba(74, 158, 255, 0.15);
-}
-
-.flow-energy-value {
-    font-size: 1.2rem;
-    font-weight: bold;
-    margin-bottom: 5px;
-    color: #ffffff;
-}
-
-.flow-energy-label {
-    font-size: 0.8rem;
-    opacity: 0.8;
-    color: #cccccc;
+/* Dim a vehicle card when its data is stale/offline */
+.mini-card.offline-data {
+    opacity: 0.55;
 }
 
 /* Make charts full-viewport width and one-per-row */

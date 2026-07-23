@@ -77,11 +77,12 @@
         color: #4caf50;
     }
 
-/* Charger cable indicator (Tesla-app style) */
+/* Charger cable indicator (Tesla-app style) — sits beside the kW / amps value */
 .charge-connector {
     display: none; /* hidden until plugged in */
-    width: 48px;
-    height: 24px;
+    width: 34px;
+    height: 18px;
+    flex: 0 0 auto;
     vertical-align: middle;
 }
 
@@ -93,11 +94,11 @@
     }
 
     .charge-connector .connector-cable {
-        stroke: #4caf50;
+        stroke: #2dd36f;
     }
 
     .charge-connector .connector-head {
-        fill: #4caf50;
+        fill: #2dd36f;
     }
 
     .charge-connector .connector-flow {
@@ -109,7 +110,8 @@
 
     /* Plugged in: show green cable */
     .charge-connector.plugged {
-        display: inline-block;
+        display: inline-flex;
+        align-items: center;
     }
 
     /* Actively charging: animate energy flowing down the cable */
@@ -127,6 +129,6 @@
 }
 
 @keyframes charge-glow {
-    from { fill: #4caf50; }
+    from { fill: #2dd36f; }
     to { fill: #b9f6ca; }
 }

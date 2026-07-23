@@ -62,7 +62,20 @@ const SHARED_CONFIG = {
         "NEARLY_FULL_PERCENT": 95,             // "nearly full" for the low trigger bar
         "MIN_SOLAR_HOURS_LEFT": 3.0,           // don't start a charge without this much useful solar left
         "STOP_MIN_IMPROVEMENT_PERCENT": 2.0,   // don't interrupt a charge for less predicted Powerwall gain than this
+        "STOP_NEAR_FULL_PERCENT": 97,          // near-full tier for the stop decision. The stop side protects a true 100% only when it is actually reachable (stop-now forecast hits it); otherwise the pack ends essentially full regardless, so it protects only this level and lets the car keep soaking surplus the full pack would otherwise curtail. Sits within the model's ~1.5pp forecast noise of 100%, so ordinary evening-load over-prediction no longer trips an aggressive too-early stop (2026-07-22 Model X 4:45 PM incident), while a genuine drain — one where stopping WOULD reach 100% — still triggers a protective stop
         "ACTION_COOLDOWN_HOURS": 2.0,          // a car's auto-start/auto-stop may repeat after this long (was once per day)
-        "CROSSOVER_COOL_SETPOINT_F": 80        // when an auto-stop fires at the crossover, raise a below-80 cool setpoint to this to shed evening HVAC load
+        "CROSSOVER_COOL_SETPOINT_F": 80,       // when an auto-stop fires at the crossover, raise a below-80 cool setpoint to this to shed evening HVAC load
+
+        // On a sunny day the car keeps charging off the surplus (which the
+        // Powerwall, already full, would otherwise curtail) until this many
+        // minutes before the solar/house-load crossover, then it is stopped so
+        // the freed solar tops the Powerwall to 100% with margin before sunset
+        // and the evening HVAC load is shed (CROSSOVER_COOL_SETPOINT_F). The stop
+        // moves earlier than this only when the afternoon can't otherwise refill
+        // the Powerwall to 100% by the crossover (the car drains it as solar
+        // fades). Replaces the old "reached 100% at some point" test, which let
+        // the car bleed the Powerwall down all evening once it had briefly
+        // touched 100% at midday.
+        "STOP_LOCK_IN_MARGIN_MINUTES": 75
     }
 };

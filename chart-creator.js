@@ -610,8 +610,15 @@ function createHvacChart() {
 
     updateHvacStats(filteredData, dayData);
 
-    const datasets = [
-        {
+    // Show only the setpoint relevant to the current mode: Cool mode hides the
+    // heat setpoint, any other mode hides the cool setpoint.
+    const latestPoint = filteredData.length ? filteredData[filteredData.length - 1] : {};
+    const currentMode = latestPoint.ThermostatMode || latestPoint.ThermostatSystemModeRaw || '';
+    const isCoolMode = /cool/i.test(currentMode);
+
+    const datasets = [];
+    if (isCoolMode) {
+        datasets.push({
             label: 'Cool Setpoint',
             data: coolSetpoints,
             borderColor: '#42a5f5',
@@ -620,8 +627,9 @@ function createHvacChart() {
             stepped: true,
             pointRadius: 0,
             spanGaps: true
-        },
-        {
+        });
+    } else {
+        datasets.push({
             label: 'Heat Setpoint',
             data: heatSetpoints,
             borderColor: '#ff7043',
@@ -630,7 +638,9 @@ function createHvacChart() {
             stepped: true,
             pointRadius: 0,
             spanGaps: true
-        },
+        });
+    }
+    datasets.push(
         {
             label: 'Indoor Temperature',
             data: indoorTemps,
@@ -653,7 +663,7 @@ function createHvacChart() {
             pointRadius: 0,
             spanGaps: true
         }
-    ];
+    );
 
     hvacChart = new Chart(ctx, {
         type: 'line',
@@ -728,6 +738,17 @@ function updateHvacStats(filteredData, dayData) {
         (latest.WeatherTemperatureF > -50 ? latest.WeatherTemperatureF : 0)));
     set('hvacHeatSet', temp(latest.ThermostatHeatSetpointF));
     set('hvacCoolSet', temp(latest.ThermostatCoolSetpointF));
+
+    // Only the setpoint relevant to the current mode is shown: Cool mode hides
+    // the Heat Set tile, any other mode hides the Cool Set tile.
+    const inCoolMode = /cool/i.test(mode);
+    const toggleTile = (id, show) => {
+        const el = document.getElementById(id);
+        const tile = el ? el.closest('.hvac-stat') : null;
+        if (tile) tile.style.display = show ? '' : 'none';
+    };
+    toggleTile('hvacHeatSet', !inCoolMode);
+    toggleTile('hvacCoolSet', inCoolMode);
     set('hvacFan', latest.ThermostatFanMode || '--');
     set('hvacHold', latest.ThermostatHoldActive ? 'On' : 'Off');
     set('hvacAirflow', num(latest.ThermostatAirflowCfm, ' CFM'));
@@ -1204,13 +1225,22 @@ function houseLoadExcludingCars(point) {
     return Math.max(0, load - cars);
 }
 
-// Finds the evening "crossover": the last time in the day solar production
-// falls to equal the house load (heat pump included, cars excluded), after
-// which solar can no longer cover the house. Combines today's actual data with
+// Finds the evening "crossover": the last time in the day solar can no longer
+// cover the house load (heat pump included, cars excluded), after which the
+// Powerwall must discharge to run the house. Combines today's actual data with
 // the rest-of-day prediction so the marker works whether the crossover has
 // already happened or is still ahead. Returns { chartIndex, time } (chartIndex
 // may be fractional, interpolated between samples) or null if there is no such
 // crossover (e.g. solar never exceeds the house load).
+//
+// Crucially this must NOT be fooled by curtailment: once the Powerwall is full
+// the inverter throttles production down toward the house load (or toward
+// whatever a charging car draws), so the recorded SolarPowerKw collapses even
+// though the panels could still cover the house — that made the marker land far
+// too early (e.g. 5:13 PM on a day the Powerwall actually held 100% until 6 PM).
+// So the measured side treats any slot where the Powerwall is full and NOT
+// discharging as "still covered", and the predicted side uses the DELIVERABLE
+// (uncurtailed) solar rather than the curtailed produced line.
 function computeSolarLoadCrossover(todayData, predictions, actualDataCount) {
     const solar = [];
     const load = [];
@@ -1218,13 +1248,23 @@ function computeSolarLoadCrossover(todayData, predictions, actualDataCount) {
 
     // Actual, measured portion of the day
     todayData.forEach(p => {
-        solar.push(Math.max(0, p.SolarPowerKw || 0));
-        load.push(houseLoadExcludingCars(p));
+        const l = houseLoadExcludingCars(p);
+        const measured = Math.max(0, p.SolarPowerKw || 0);
+        // Powerwall full, not discharging, and not leaning on grid import ⇒ the house
+        // is running on solar and production is merely curtailed; the low reading isn't
+        // a real deficit. (The grid guard excludes the rare full-but-idle slot where the
+        // grid, not solar, covers a deficit — that IS past the crossover.)
+        const stillCovered = (p.BatteryPercentage || 0) >= 99.5 &&
+            (p.BatteryPowerKw || 0) < 0.3 && (p.GridPowerKw || 0) < 0.5;
+        solar.push(stillCovered ? Math.max(measured, l) : measured);
+        load.push(l);
         times.push(convertToPDT(p.LocalTimestamp));
     });
 
-    // Predicted remainder (aligned with the prediction datasets on the x-axis)
-    const predSolar = predictions.solar || [];
+    // Predicted remainder (aligned with the prediction datasets on the x-axis).
+    // Use deliverable (uncurtailed) solar — the produced forecast's evening tail is
+    // the curtailed median profile and crosses the load far too early.
+    const predSolar = predictions.deliverableSolar || predictions.solar || [];
     const predLoad = predictions.houseLoad || [];
     const predTimes = predictions.times || [];
     for (let j = 0; j < predSolar.length; j++) {

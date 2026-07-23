@@ -165,18 +165,15 @@ function updateDashboard() {
     document.getElementById('powerwallKwh').textContent = `${calculateBatteryKwh(batteryPercent, BATTERY_CAPACITIES.POWERWALL)} kWh`;
     document.getElementById('powerwallBar').style.width = `${batteryPercent}%`;
 
-    // Add stale info for Powerwall
-    const powerwallAge = formatTimeDifference(lastUpdated, now);
-    const powerwallStaleInfo = document.getElementById('powerwallStaleInfo');
-    powerwallStaleInfo.textContent = powerwallAge;
-    powerwallStaleInfo.style.display = 'block';
-
     updateVehicleCard('Model3', 'model3', latest, now, BATTERY_CAPACITIES.MODEL_3);
     updateVehicleCard('ModelX', 'modelX', latest, now, BATTERY_CAPACITIES.MODEL_X);
 
     // Show dashboard
     document.getElementById('loading').style.display = 'none';
     document.getElementById('dashboard').style.display = 'block';
+
+    // Fit the energy-flow scene to its container now that it has a measurable width
+    if (typeof scaleFlowStage === 'function') scaleFlowStage();
 }
 
 function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batteryCapacity) {
@@ -188,11 +185,9 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
     const statusElement = document.getElementById(`${cardPrefix}Status`);
     const rangeElement = document.getElementById(`${cardPrefix}Range`);
     const chargingRateElement = document.getElementById(`${cardPrefix}ChargingRate`);
-    const staleInfoElement = document.getElementById(`${cardPrefix}StaleInfo`);
-    const connectorElement = document.getElementById(`${cardPrefix}Connector`);
 
     // Check if all required elements exist
-    if (!percentElement || !kwhElement || !barElement || !statusElement || !rangeElement || !staleInfoElement) {
+    if (!percentElement || !kwhElement || !barElement || !statusElement || !rangeElement) {
         console.warn(`Some vehicle display elements not found for ${cardPrefix}`);
         return;
     }
@@ -260,24 +255,6 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
         }
         else
             console.warn(`Charging rate element not found for ${cardPrefix}`);
-
-        if (connectorElement) {
-            // Tesla reports 'Disconnected' when unplugged; any other state means the cable is in
-            const chargingState = dataToUse[`${vehiclePrefix}ChargingState`];
-            const isPlugged = latest[`${vehiclePrefix}IsAvailable`]
-                && chargingState && chargingState !== 'Disconnected';
-            const isCharging = isPlugged && dataToUse[`${vehiclePrefix}IsCharging`];
-            connectorElement.classList.toggle('plugged', !!isPlugged);
-            connectorElement.classList.toggle('charging', !!isCharging);
-            connectorElement.title = isCharging ? 'Charging'
-                : isPlugged ? 'Plugged in'
-                : 'Not plugged in';
-        }
-
-        // Always show data age
-        const dataAge = formatTimeDifference(dataTimestamp, currentTime);
-        staleInfoElement.textContent = dataAge;
-        staleInfoElement.style.display = 'block';
     } else {
         // No data available at all
         percentElement.textContent = '--%';
@@ -290,13 +267,6 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
         }
         else
             console.warn(`Charging rate element not found for ${cardPrefix}`);
-
-        if (connectorElement) {
-            connectorElement.classList.remove('plugged', 'charging');
-            connectorElement.title = 'Not plugged in';
-        }
-
-        staleInfoElement.style.display = 'none';
     }
 }
 

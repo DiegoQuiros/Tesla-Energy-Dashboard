@@ -5,7 +5,7 @@ const CHARGE_AUTOMATION = SHARED_CONFIG.CHARGE_AUTOMATION;
 
 function generateBatteryPredictions(todayData) {
     if (todayData.length === 0) {
-        return { labels: [], powerwall: [], model3: [], modelX: [], times: [], solar: [], houseLoad: [], events: [], warning: null };
+        return { labels: [], powerwall: [], model3: [], modelX: [], times: [], solar: [], houseLoad: [], deliverableSolar: [], events: [], warning: null };
     }
 
     const ctx = buildPredictionContext(todayData);
@@ -40,6 +40,7 @@ function generateBatteryPredictions(todayData) {
         times: result.times,
         solar: result.solar,
         houseLoad: result.houseLoad,
+        deliverableSolar: result.deliverableSolar,
         events: visibleEvents,
         // Live automation health: set when a charging car endangers the
         // 100%-by-crossover goal and the automation can't (or can no longer) fix it
@@ -84,7 +85,7 @@ function assessAutomationWarning(ctx, overrides) {
     };
     delete base.stops[chargingCar];
     const continueForecast = simulateDay(ctx, base);
-    if (reaches100ByCrossover(continueForecast)) return null; // goal safe even with the car charging
+    if (powerwallFullAtCrossover(continueForecast)) return null; // goal safe even with the car charging
 
     // After the day's produced-solar/house-load crossover there is nothing left
     // to protect — the Powerwall only declines until tomorrow and the automation
@@ -95,9 +96,21 @@ function assessAutomationWarning(ctx, overrides) {
     const stopNowForecast = simulateDay(ctx, Object.assign({}, base, {
         stops: Object.assign({}, base.stops, { [chargingCar]: ctx.now })
     }));
-    const goalLost = !reaches100ByCrossover(stopNowForecast);
+    // Near-full tier (mirrors decideStopTime): when the pack ends essentially full but
+    // not a reachable 100% (STOP_NEAR_FULL_PERCENT ≤ level < 100%), the automation
+    // deliberately lets the car keep soaking surplus and does not chase the last ~% —
+    // there is no protective stop due, so no warning. A reachable 100% (level ≥ 99.5)
+    // still falls through so a blocked/failed stop that would cost it is surfaced.
+    const stopNowLevel = stopNowForecast.powerwallAtCrossover || 0;
+    if (stopNowLevel >= CHARGE_AUTOMATION.STOP_NEAR_FULL_PERCENT && !powerwallFullAtCrossover(stopNowForecast)) return null;
+    const goalLost = !powerwallFullAtCrossover(stopNowForecast);
     const carName = chargingCar === 'Model3' ? 'Model 3' : 'Model X';
-    const peakText = ` The Powerwall is predicted to peak at ~${stopNowForecast.peakPercent.toFixed(0)}%.`;
+    // Report the level AT the crossover (going into the night), not the day's
+    // midday peak — on a drains-after-noon day the peak reads a reassuring ~100%
+    // while the pack actually ends the solar day far lower.
+    const endPct = stopNowForecast.powerwallAtCrossover != null
+        ? stopNowForecast.powerwallAtCrossover : stopNowForecast.peakPercent;
+    const peakText = ` The Powerwall is predicted to end the solar day at ~${endPct.toFixed(0)}%.`;
 
     const vehicleState = window.chargeAutomationState ? window.chargeAutomationState[chargingCar] : null;
     if (vehicleState) {
@@ -110,8 +123,15 @@ function assessAutomationWarning(ctx, overrides) {
         const sinceStopMs = Date.now() - lastStopMs;
         const plannedStop = overrides.stops && overrides.stops[chargingCar];
         const stopDueSoon = plannedStop && (plannedStop.getTime() - ctx.now.getTime()) <= 20 * 60 * 1000; // STOP_LOOKAHEAD_MINUTES
+        // The "charging now" evidence (chargingCar) is read from the latest energy
+        // sample, which uploads only every ~15 min — the successful stop updates
+        // LastStopUtc in a separate blob immediately. So right after an auto-stop the
+        // newest sample still predates the stop and its IsCharging flag is stale (the
+        // car really did stop). Only a sample taken AFTER the stop proves a genuine
+        // restart; without this the banner fires on every successful auto-stop.
+        const chargingSampleAfterStop = ctx.now.getTime() > lastStopMs;
 
-        if (!isNaN(lastStopMs) && sinceStopMs >= 0 && sinceStopMs < cooldownMs && stopDueSoon) {
+        if (!isNaN(lastStopMs) && sinceStopMs >= 0 && sinceStopMs < cooldownMs && stopDueSoon && chargingSampleAfterStop) {
             return {
                 severity: 'critical',
                 message: `The charge automation needs to stop the ${carName}, but it already auto-stopped it ` +
@@ -280,19 +300,25 @@ function simulateDay(ctx, overrides) {
     const o = overrides || {};
     const stops = o.stops || {};
     const applyWeekdayStop = o.applyModel3WeekdayStop !== false;
-    const solarProfile = o.usePotentialSolar ? ctx.potentialSolar : ctx.profiles.solar;
-    const solarScale = o.usePotentialSolar ? ctx.potentialSolarScale : ctx.solarScale;
 
     const result = {
         labels: [], powerwall: [], model3: [], modelX: [],
         times: [], chargeRateKw: [],
         // Per-slot produced solar and house load (excl. car charging) so the
-        // battery chart can mark the evening solar/house-load crossover
-        solar: [], houseLoad: [],
+        // battery chart can mark the evening solar/house-load crossover.
+        // deliverableSolar is what the panels COULD produce (uncurtailed) — the chart
+        // uses it, not the curtailed produced line, so the crossover marker lands where
+        // solar can truly no longer cover the house (not where a full-Powerwall day
+        // throttled production down to the load).
+        solar: [], houseLoad: [], deliverableSolar: [],
         reaches100: false, fullTime: null,
         peakPercent: (ctx.latest.BatteryPercentage || 0),
         lastUsefulSolarEnd: null,
-        solarLoadCrossover: null
+        solarLoadCrossover: null,
+        // Powerwall % at the crossover slot — its level going into the night.
+        // The stop side protects THIS (still full at the crossover), not merely
+        // "touched 100% at some earlier point and then let the car drain it".
+        powerwallAtCrossover: null
     };
 
     let powerwallKwh = ctx.startPowerwallKwh;
@@ -317,8 +343,20 @@ function simulateDay(ctx, overrides) {
         const blendWeight = Math.max(0, 1 - minutesFromNow / PREDICTION_CONFIG.LOAD_BLEND_MINUTES);
         const houseLoadKw = blendWeight * ctx.recentBaseLoad + (1 - blendWeight) * ctx.profiles.load[slot];
 
-        // Solar: historical profile shape scaled by today's weather
-        const solarKw = solarProfile[slot] * solarScale;
+        // Solar: historical profile shape scaled by today's weather. The
+        // potential-solar decision sims ask "how much could the Powerwall still
+        // absorb?", so their deliverable estimate must never fall below the
+        // ordinary produced estimate — the afternoon haircut and the separate
+        // potential weather scale can otherwise read below it around solar noon
+        // and fabricate a Powerwall drain (which then stops the car far too
+        // early). The chart's produced sim is unaffected (both terms are equal).
+        const producedSolarKw = ctx.profiles.solar[slot] * ctx.solarScale;
+        // Deliverable = what the panels could produce (uncurtailed envelope), never
+        // below the produced estimate. The decision sims run on it; the chart's
+        // produced sim leaves solarKw at producedSolarKw but still records it for the
+        // crossover marker.
+        const deliverableSolarKw = Math.max(ctx.potentialSolar[slot] * ctx.potentialSolarScale, producedSolarKw);
+        const solarKw = o.usePotentialSolar ? deliverableSolarKw : producedSolarKw;
 
         // Grid import credit fades out — the snapshot only describes right now
         const gridCreditKw = ctx.gridImportKw * Math.max(0, 1 - minutesFromNow / PREDICTION_CONFIG.GRID_DECAY_MINUTES);
@@ -421,12 +459,13 @@ function simulateDay(ctx, overrides) {
         // judged on the produced profile, even in potential-solar decision sims:
         // the potential profile mirrors the (stronger) morning ramp onto the
         // evening, which would push this moment later than the panels can deliver.
-        const producedSolarKw = ctx.profiles.solar[slot] * ctx.solarScale;
         if (producedSolarKw >= houseLoadKw) {
             result.solarLoadCrossover = new Date(currentTime.getTime() + 15 * 60 * 1000);
+            result.powerwallAtCrossover = percent; // its level going into the night
         }
         result.solar.push(producedSolarKw);
         result.houseLoad.push(houseLoadKw);
+        result.deliverableSolar.push(deliverableSolarKw);
 
         // Move to next 15-minute interval
         currentTime.setMinutes(currentTime.getMinutes() + 15);
@@ -500,6 +539,8 @@ function decideAutomationOverrides(ctx) {
  * "Reaches 100%" for automation decisions: the Powerwall must get there by the
  * solar/load crossover (the last moment production still covers the house) —
  * reaching 100% "by sundown" is impossible, it only ever declines after that.
+ * Used by the start side (a no-car baseline, where touching 100% and being full
+ * at the crossover are the same thing since nothing drains it).
  */
 function reaches100ByCrossover(forecast) {
     return forecast.reaches100 && forecast.solarLoadCrossover !== null &&
@@ -507,10 +548,39 @@ function reaches100ByCrossover(forecast) {
 }
 
 /**
+ * True when the Powerwall is still full (~100%) AT the solar/load crossover, so
+ * it ends the solar day full and enters the night with a full pack. This is
+ * what the stop side protects — stronger than reaches100ByCrossover, which only
+ * asks whether 100% was touched at some earlier point. A charging car routinely
+ * pushes the Powerwall to 100% at midday and then bleeds it back down as the
+ * afternoon solar fades, so "touched 100%" is not "ends the day at 100%".
+ */
+function powerwallFullAtCrossover(forecast) {
+    return powerwallAtLeastAtCrossover(forecast, 99.5);
+}
+
+/**
+ * True when the Powerwall is at/above `target` percent AT the solar/load crossover.
+ * The stop side protects a true 100% (target 99.5) when it is actually reachable, and
+ * only the near-full level (STOP_NEAR_FULL_PERCENT) when it is not — see decideStopTime.
+ */
+function powerwallAtLeastAtCrossover(forecast, target) {
+    return forecast.solarLoadCrossover !== null &&
+        forecast.powerwallAtCrossover !== null &&
+        forecast.powerwallAtCrossover >= target;
+}
+
+/**
  * The automation's stop decision for a car charging (or predicted to start
  * charging) at fromTime — port of DecideStop. Returns the Date the automation
  * would issue charge_stop, or null when it would let the session run.
  * Decision sims use the potential-solar profile, exactly like the C# side.
+ *
+ * Goal: the Powerwall ends the solar day full. The car keeps charging off the
+ * surplus (which the already-full Powerwall would otherwise curtail) until the
+ * LATEST moment that still lets the freed solar refill the Powerwall to 100% AT
+ * the crossover — but no later than STOP_LOCK_IN_MARGIN_MINUTES before it, so
+ * 100% is locked in with margin and the evening HVAC load is shed.
  */
 function decideStopTime(ctx, key, baseOverrides, fromTime) {
     const base = {
@@ -526,33 +596,56 @@ function decideStopTime(ctx, key, baseOverrides, fromTime) {
     });
 
     const continueForecast = simulateDay(ctx, base);
-    if (reaches100ByCrossover(continueForecast)) {
-        return null; // the Powerwall still reaches 100% in time with the car charging
-    }
+    const crossover = continueForecast.solarLoadCrossover;
+    // No produced-solar crossover today (night / solar never covers the house) —
+    // nothing to protect; leave the charge alone.
+    if (crossover === null) return null;
+    const lockIn = new Date(crossover.getTime() - CHARGE_AUTOMATION.STOP_LOCK_IN_MARGIN_MINUTES * 60 * 1000);
 
+    // If even stopping now can't leave the Powerwall full at the crossover, 100%
+    // is out of reach either way — stop only for a meaningful peak improvement,
+    // and never before solar noon (the afternoon alone can fill the Powerwall,
+    // and a marine-layer morning makes the weather scale read far darker than
+    // the day will be).
     const stopNowForecast = simulateDay(ctx, withStop(fromTime));
-    if (!reaches100ByCrossover(stopNowForecast)) {
-        // 100% is out of reach either way — the automation stops the car only for
-        // a meaningful peak improvement, and never before solar noon (the
-        // afternoon alone can fill the Powerwall, and a marine-layer morning
-        // makes the weather scale read far darker than the day will be)
-        const improvement = stopNowForecast.peakPercent - continueForecast.peakPercent;
-        if (improvement < CHARGE_AUTOMATION.STOP_MIN_IMPROVEMENT_PERCENT) {
-            return null;
-        }
+    const stopNowLevel = stopNowForecast.powerwallAtCrossover || 0;
+
+    // Genuine shortfall: even stopping the car now leaves the Powerwall well below
+    // full. Interrupt the charge only for a meaningful gain in the Powerwall's level
+    // AT the crossover (the level going into the night), NOT the day's peak — a day
+    // that touches 100% at midday then drains has a 0pp peak delta even when stopping
+    // saves the pack. Never before solar noon (the afternoon alone can fill the pack;
+    // a marine-layer morning makes the weather scale read far darker than the day is).
+    if (stopNowLevel < CHARGE_AUTOMATION.STOP_NEAR_FULL_PERCENT) {
+        const improvement = stopNowLevel - continueForecast.powerwallAtCrossover;
+        if (improvement < CHARGE_AUTOMATION.STOP_MIN_IMPROVEMENT_PERCENT) return null;
         return fromTime < ctx.solarNoon ? new Date(ctx.solarNoon) : new Date(fromTime);
     }
 
-    // Stopping now still gets the Powerwall to 100% — find the LATEST stop that
-    // does, so the car charges as long as the Powerwall can afford. Stopping
-    // earlier always helps, so the scan ends at the first stop time that fails.
+    // Tiered protection target: hold a TRUE 100% when it is actually reachable (i.e.
+    // stopping the car now would get there); otherwise the Powerwall ends the solar
+    // day essentially full regardless, so protect only the near-full level and let the
+    // car keep soaking surplus the full pack would otherwise curtail. Either way the
+    // latest-safe scan below still stops the car the moment continuing would drain the
+    // pack under `target`, so a genuine late-afternoon drain stays protected. (Without
+    // the near-full tier, ordinary evening-load over-prediction pulls the stop-now
+    // forecast a hair under 100% and the car is stopped far too early — 2026-07-22:
+    // Model X stopped 4:45 PM, curtailing the 5–6 PM surplus while the pack held 100%.)
+    const target = powerwallFullAtCrossover(stopNowForecast) ? 99.5 : CHARGE_AUTOMATION.STOP_NEAR_FULL_PERCENT;
+
+    // Find the LATEST stop that still leaves the Powerwall at/above `target` at the
+    // crossover (stopping earlier only ever helps, so the scan ends at the first fail)...
     let latestSafe = nextSlotBoundary(fromTime);
     for (let t = new Date(latestSafe.getTime() + 15 * 60 * 1000); t <= ctx.endOfDay;
          t = new Date(t.getTime() + 15 * 60 * 1000)) {
-        if (!reaches100ByCrossover(simulateDay(ctx, withStop(t)))) break;
+        if (!powerwallAtLeastAtCrossover(simulateDay(ctx, withStop(t)), target)) break;
         latestSafe = t;
     }
-    return latestSafe;
+    // ...then cap it at the lock-in margin, never scheduling before the next slot.
+    const floor = nextSlotBoundary(fromTime);
+    let stopAt = latestSafe < lockIn ? latestSafe : lockIn;
+    if (stopAt < floor) stopAt = floor;
+    return stopAt;
 }
 
 /**

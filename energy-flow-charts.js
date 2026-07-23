@@ -1,113 +1,89 @@
 function updateEnergyFlowCharts(latest) {
-    // Update the house visualization
+    // Update the house scene
     updateEnergyFlowHouse(latest);
 }
 
-// Update the energy flow house visualization when data changes
-function updateEnergyFlowHouse(latest) {
-    // Update solar in the sun icon
-    const solarPower = latest.SolarPowerKw || 0;
-    document.getElementById('flowSolarValue').textContent = `${solarPower.toFixed(1)} kW`;
+// Scale the fixed 1100x600 scene stage to fill its (responsive) container.
+function scaleFlowStage() {
+    const viz = document.querySelector('.flow-visualization');
+    const stage = document.getElementById('flowStage');
+    if (!viz || !stage) return;
+    const w = viz.clientWidth;
+    if (w > 0) stage.style.transform = `scale(${w / 1100})`;
+}
 
-    // Update sun brightness based on solar production
-    const sunIcon = document.querySelector('.sun-icon');
-    if (sunIcon) {
-        const brightness = Math.min(1, solarPower / 10);
-        const opacity = 0.4 + (brightness * 0.6);
-        sunIcon.style.opacity = opacity;
-        sunIcon.style.boxShadow = `0 0 ${20 + brightness * 30}px rgba(255, 193, 7, ${0.3 + brightness * 0.5})`;
-    }
-
-    // Update Model 3 charging rate display
-    const model3ChargingRateElement = document.getElementById('model3ChargingRate');
-    if (model3ChargingRateElement) {
-        if (latest.Model3IsCharging && latest.Model3ChargerPowerKw) {
-            model3ChargingRateElement.textContent = `${latest.Model3ChargerPowerKw} kW`;
-        } else {
-            model3ChargingRateElement.textContent = '-- kW';
-        }
-    }
-    else
-        console.warn('Model 3 charging rate element not found');    
-
-    // Update Model X charging rate display  
-    const modelXChargingRateElement = document.getElementById('modelXChargingRate');
-    if (modelXChargingRateElement) {
-        if (latest.ModelXIsCharging && latest.ModelXChargerPowerKw) {
-            modelXChargingRateElement.textContent = `${latest.ModelXChargerPowerKw} kW`;
-        } else {
-            modelXChargingRateElement.textContent = '-- kW';
-        }
-    }
-    else
-        console.warn('Model X charging rate element not found');
-
-    // Change Model 3 color when charging
-    const model3Car = document.getElementById('model3Card');
-        if (latest.Model3IsCharging) {
-            model3Car.style.background = 'linear-gradient(135deg, #39833c 0%, #225e25 100%)';
-            model3Car.style.boxShadow = '0 4px 12px rgba(76, 175, 80, 0.6)';
-        } else {
-            model3Car.style.background = '';
-            model3Car.style.boxShadow = '0 4px 8px rgba(0,0,0,0.3)';
-        }
-
-    // Change Model X color when charging
-    const modelXCard = document.getElementById('modelXCard');
-        if (latest.ModelXIsCharging) {
-            modelXCard.style.background = 'linear-gradient(135deg, #39833c 0%, #225e25 100%)';
-            modelXCard.style.boxShadow = '0 4px 12px rgba(76, 175, 80, 0.6)';
-        } else {
-            modelXCard.style.background = '';
-            modelXCard.style.boxShadow = '0 4px 8px rgba(0,0,0,0.3)';
-        }
-
-    // Update Powerwall
-    const batteryPower = latest.BatteryPowerKw || 0;
-    document.getElementById('flowPowerwallValue').textContent =
-        `${Math.abs(batteryPower).toFixed(1)} kW • ${(latest.BatteryPercentage || 0).toFixed(0)}%`;
-
-    // Calculate home consumption
-    const model3ChargingPower = (latest.Model3IsCharging && latest.Model3ChargerPowerKw) ? latest.Model3ChargerPowerKw : 0;
-    const modelXChargingPower = (latest.ModelXIsCharging && latest.ModelXChargerPowerKw) ? latest.ModelXChargerPowerKw : 0;
-    const totalVehicleCharging = model3ChargingPower + modelXChargingPower;
-
-    const loadPower = latest.LoadPowerKw || 0;
-    const housePower = Math.max(0, loadPower - totalVehicleCharging);
-
-    document.getElementById('flowHomeValue').textContent = `${housePower.toFixed(1)} kW`;
-
-    // Grid display
-    const gridPower = latest.GridPowerKw || 0;
-    const flowGridElements = document.querySelectorAll('#flowGridValue');
-    if (flowGridElements.length > 0) {
-        // Update the grid power display (there might be multiple elements with this ID)
-        flowGridElements[flowGridElements.length - 1].textContent = `${Math.abs(gridPower).toFixed(1)} kW`;
-    }
-    else
-        console.warn('No elements found with ID flowGridValue');
-
-    const gridNode = document.querySelector('.flow-grid-node');
-    const gridLabel = document.getElementById('flowGridLabel');
-    const electricalTower = document.querySelector('.electrical-tower');
-
-    if (gridPower > 0.1) {
-        gridNode.style.borderColor = '#ff6b35';
-        gridNode.style.background = 'rgba(255, 107, 53, 0.15)';
-        gridLabel.textContent = 'IMPORTING';
-        electricalTower.style.filter = 'brightness(1.2) drop-shadow(0 0 10px rgba(255, 107, 53, 0.5))';
-    } else if (gridPower < -0.1) {
-        gridNode.style.borderColor = '#00ff88';
-        gridNode.style.background = 'rgba(0, 255, 136, 0.15)';
-        gridLabel.textContent = 'EXPORTING';
-        electricalTower.style.filter = 'brightness(1.2) drop-shadow(0 0 10px rgba(0, 255, 136, 0.5))';
-    } else {
-        gridNode.style.borderColor = '#4a9eff';
-        gridNode.style.background = 'rgba(74, 158, 255, 0.15)';
-        gridLabel.textContent = 'GRID';
-        electricalTower.style.filter = 'brightness(1)';
+// Cable direction convention: every cable path is drawn FROM the house TO the device.
+//   forward (default)  = energy leaving the house  (house -> device)
+//   reverse            = energy arriving at the house (device -> house)
+// Higher power animates faster (shorter dash cycle).
+function setCableFlow(id, active, reverse, kw, color) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.toggle('active', !!active);
+    el.classList.toggle('reverse', !!reverse);
+    if (color) el.style.stroke = color;
+    if (active) {
+        const dur = Math.max(0.45, Math.min(1.5, 1.2 - Math.min(Math.abs(kw) || 0, 10) * 0.09));
+        el.style.animationDuration = dur.toFixed(2) + 's';
     }
 }
+
+// Update the energy-flow house scene when data changes
+function updateEnergyFlowHouse(latest) {
+    const solarPower = latest.SolarPowerKw || 0;
+    const gridPower = latest.GridPowerKw || 0;       // + importing, - exporting
+    const batteryPower = latest.BatteryPowerKw || 0; // - charging, + discharging
+
+    // Per-vehicle charge power (what the cars are drawing right now)
+    const m3Charge = (latest.Model3IsCharging && latest.Model3ChargerPowerKw) ? latest.Model3ChargerPowerKw : 0;
+    const mxCharge = (latest.ModelXIsCharging && latest.ModelXChargerPowerKw) ? latest.ModelXChargerPowerKw : 0;
+
+    // ---- numeric readouts ----
+    const setText = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+    setText('flowSolarValue', `${solarPower.toFixed(1)} kW`);
+    setText('flowPowerwallValue', `${Math.abs(batteryPower).toFixed(1)} kW`);
+
+    const housePower = Math.max(0, (latest.LoadPowerKw || 0) - m3Charge - mxCharge);
+    setText('flowHomeValue', `${housePower.toFixed(1)} kW`);
+
+    setText('flowGridValue', `${Math.abs(gridPower).toFixed(1)} kW`);
+    setText('flowGridLabel', gridPower > 0.1 ? 'IMPORTING' : gridPower < -0.1 ? 'EXPORTING' : 'GRID');
+
+    // Sun dims a little at night / when barely producing
+    const sunGlow = document.getElementById('sunGlow');
+    if (sunGlow) sunGlow.style.opacity = (0.45 + Math.min(1, solarPower / 8) * 0.55).toFixed(2);
+
+    // ---- animated energy flows ----
+    const AMBER = '#ffce5c', BLUE = '#7fb2ff', GREEN = '#4dd08a';
+    // Solar always flows sun -> house (into the house = reverse)
+    setCableFlow('flowSolar', solarPower > 0.05, true, solarPower, AMBER);
+    // Grid: importing (grid -> house) = reverse/blue; exporting (house -> grid) = forward/green
+    setCableFlow('flowGrid', Math.abs(gridPower) > 0.1, gridPower > 0, gridPower, gridPower > 0 ? BLUE : GREEN);
+    // Powerwall: charging (house -> pw) = forward; discharging (pw -> house) = reverse
+    setCableFlow('flowPw', Math.abs(batteryPower) > 0.05, batteryPower > 0, batteryPower, GREEN);
+    // Cars only ever receive energy (wall -> car = forward)
+    setCableFlow('flowCar1', !!latest.Model3IsCharging, false, m3Charge, GREEN);
+    setCableFlow('flowCar2', !!latest.ModelXIsCharging, false, mxCharge, GREEN);
+
+    // Keep the scene sized to its container. Deferred to the next frame so it also
+    // works on the first update, which runs while #dashboard is still display:none
+    // (the element has no width yet until the reveal at the end of updateDashboard).
+    requestAnimationFrame(scaleFlowStage);
+}
+
+// Keep the scene scaled on load, on resize, and when the dashboard is first revealed.
+(function initFlowStageScaling() {
+    if (window._flowStageInit) return;
+    window._flowStageInit = true;
+    const attach = () => {
+        const viz = document.querySelector('.flow-visualization');
+        if (viz && 'ResizeObserver' in window) new ResizeObserver(scaleFlowStage).observe(viz);
+        window.addEventListener('resize', scaleFlowStage);
+        scaleFlowStage();
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', attach);
+    else attach();
+})();
 
 function createEnergyCreationChart(data, labels, colors) {
     const ctx = document.getElementById('energyCreationChart').getContext('2d');
