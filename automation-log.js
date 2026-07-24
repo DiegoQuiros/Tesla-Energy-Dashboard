@@ -81,8 +81,18 @@ function renderAutomationLog(container, entries) {
         container.innerHTML = '<div style="color:#8a9bb5;">No automation actions logged yet.</div>';
         return;
     }
+    // Only show the last 14 days of actions (entries with an unparseable stamp are kept).
+    const cutoffMs = Date.now() - 14 * 24 * 60 * 60 * 1000;
+    const recent = entries.filter(e => {
+        const t = e.TimeUtc ? Date.parse(e.TimeUtc) : NaN;
+        return isNaN(t) || t >= cutoffMs;
+    });
+    if (recent.length === 0) {
+        container.innerHTML = '<div style="color:#8a9bb5;">No automation actions in the last 14 days.</div>';
+        return;
+    }
     // Newest first (sort by UTC timestamp descending; fall back to array order).
-    const sorted = entries.slice().sort((a, b) => {
+    const sorted = recent.slice().sort((a, b) => {
         const ta = a.TimeUtc ? Date.parse(a.TimeUtc) : 0;
         const tb = b.TimeUtc ? Date.parse(b.TimeUtc) : 0;
         return tb - ta;
