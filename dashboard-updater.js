@@ -164,6 +164,9 @@ function updateDashboard() {
     document.getElementById('powerwallPercent').textContent = `${batteryPercent.toFixed(1)}%`;
     document.getElementById('powerwallKwh').textContent = `${calculateBatteryKwh(batteryPercent, BATTERY_CAPACITIES.POWERWALL)} kWh`;
     document.getElementById('powerwallBar').style.width = `${batteryPercent}%`;
+    const powerwallPowerKw = latest.BatteryPowerKw || 0; // - charging, + discharging
+    document.getElementById('powerwallStatus').textContent =
+        powerwallPowerKw < -0.05 ? 'Charging' : powerwallPowerKw > 0.05 ? 'Discharging' : 'Idle';
 
     updateVehicleCard('Model3', 'model3', latest, now, BATTERY_CAPACITIES.MODEL_3);
     updateVehicleCard('ModelX', 'modelX', latest, now, BATTERY_CAPACITIES.MODEL_X);
@@ -235,7 +238,10 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
             statusElement.textContent = 'Offline';
         }
 
-        rangeElement.textContent = `${Math.round(dataToUse[`${vehiclePrefix}EstimatedRangeMiles`] || 0)} mi`;
+        // Prefer rated range (battery_range) to match the Tesla app; the Model 3 no
+        // longer reports est_battery_range (always 0). Fall back for older data.
+        const rangeMiles = dataToUse[`${vehiclePrefix}BatteryRange`] || dataToUse[`${vehiclePrefix}EstimatedRangeMiles`] || 0;
+        rangeElement.textContent = `${Math.round(rangeMiles)} miles`;
 
         if (chargingRateElement) {
             if (dataToUse[`${vehiclePrefix}IsCharging`] && latest[`${vehiclePrefix}IsAvailable`]) {

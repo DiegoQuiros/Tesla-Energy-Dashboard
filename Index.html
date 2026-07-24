@@ -29,11 +29,11 @@
                     <div class="last-updated" id="lastUpdated">Loading...</div>
                 </div>
                 <div class="flow-visualization">
-                    <!-- Everything is laid out in a fixed 1100x600 stage that scales to fit -->
+                    <!-- Everything is laid out in a fixed 1210x600 stage that scales to fit -->
                     <div class="flow-stage" id="flowStage">
                         <!-- scene-inner scales the whole scene (illustration + cards) to 90% about center -->
                         <div class="scene-inner">
-                            <svg class="scene" width="1100" height="600" viewBox="0 0 1100 600" aria-hidden="true">
+                            <svg class="scene" width="1210" height="600" viewBox="0 0 1210 600" aria-hidden="true">
                                 <defs>
                                     <radialGradient id="sunGrad" cx="38%" cy="34%" r="70%">
                                         <stop offset="0" stop-color="#ffe08a" />
@@ -52,10 +52,6 @@
                                         <stop offset="0" stop-color="#57648a" />
                                         <stop offset="1" stop-color="#3c4869" />
                                     </linearGradient>
-                                    <linearGradient id="pwGrad" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="0" stop-color="#eef2f8" />
-                                        <stop offset="1" stop-color="#c2cdde" />
-                                    </linearGradient>
                                     <linearGradient id="carRedGrad" x1="0" y1="0" x2="0" y2="1">
                                         <stop offset="0" stop-color="#e8463a" />
                                         <stop offset="0.5" stop-color="#c62c22" />
@@ -68,7 +64,7 @@
                                 </defs>
 
                                 <!-- ground line (floor reference under the cars) -->
-                                <line x1="0" y1="548" x2="1100" y2="548" stroke="rgba(255,255,255,.07)" stroke-width="1.5" />
+                                <line x1="0" y1="548" x2="1210" y2="548" stroke="rgba(255,255,255,.07)" stroke-width="1.5" />
 
                                 <!-- sun (horizontally centered, center at tower-top height, scaled to 57.5%) -->
                                 <g id="sunGlow" transform="translate(483.875, 82.65) scale(0.575)">
@@ -86,35 +82,39 @@
                                     <circle cx="115" cy="98" r="38" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="1.5" />
                                 </g>
 
-                                <!-- garage -->
-                                <rect x="360" y="360" width="360" height="188" rx="4" fill="url(#garageGrad)" stroke="rgba(255,255,255,.08)" />
-                                <rect x="352" y="352" width="376" height="12" rx="3" fill="#46557a" />
-                                <rect x="392" y="402" width="116" height="138" rx="5" fill="#141d31" stroke="rgba(255,255,255,.08)" />
-                                <rect x="582" y="402" width="116" height="138" rx="5" fill="#141d31" stroke="rgba(255,255,255,.08)" />
+                                <!-- garage (cluster shifted left to spread the scene across the stage) -->
+                                <g transform="translate(-150 0)">
+                                <rect x="230" y="360" width="520" height="188" rx="4" fill="url(#garageGrad)" stroke="rgba(255,255,255,.08)" />
+                                <rect x="222" y="352" width="536" height="12" rx="3" fill="#46557a" />
+                                <rect x="370" y="402" width="160" height="138" rx="5" fill="#141d31" stroke="rgba(255,255,255,.08)" />
+                                <rect x="555" y="402" width="170" height="138" rx="5" fill="#141d31" stroke="rgba(255,255,255,.08)" />
                                 <g stroke="rgba(255,255,255,.05)" stroke-width="1.5">
-                                    <line x1="392" y1="437" x2="508" y2="437" />
-                                    <line x1="392" y1="472" x2="508" y2="472" />
-                                    <line x1="392" y1="507" x2="508" y2="507" />
-                                    <line x1="582" y1="437" x2="698" y2="437" />
-                                    <line x1="582" y1="472" x2="698" y2="472" />
-                                    <line x1="582" y1="507" x2="698" y2="507" />
+                                    <line x1="370" y1="437" x2="530" y2="437" />
+                                    <line x1="370" y1="472" x2="530" y2="472" />
+                                    <line x1="370" y1="507" x2="530" y2="507" />
+                                    <line x1="555" y1="437" x2="725" y2="437" />
+                                    <line x1="555" y1="472" x2="725" y2="472" />
+                                    <line x1="555" y1="507" x2="725" y2="507" />
+                                </g>
                                 </g>
 
-                                <!-- house -->
-                                <rect x="720" y="292" width="205" height="256" rx="4" fill="url(#bodyGrad)" stroke="rgba(255,255,255,.08)" />
-                                <path d="M822 208 L950 302 L694 302 Z" fill="url(#roofGrad)" stroke="rgba(255,255,255,.10)" stroke-linejoin="round" />
+                                <!-- house (widened) -->
+                                <rect x="592" y="292" width="353" height="256" rx="4" fill="url(#bodyGrad)" stroke="rgba(255,255,255,.08)" />
+                                <path d="M768 208 L970 302 L567 302 Z" fill="url(#roofGrad)" stroke="rgba(255,255,255,.10)" stroke-linejoin="round" />
                                 <!-- rooftop solar panels -->
                                 <g>
-                                    <path d="M806 250 L872 250 L892 292 L826 292 Z" fill="#14324f" stroke="#2f6ea0" stroke-width="1.2" />
-                                    <path d="M828 250 L848 292 M850 250 L870 292" stroke="#2f6ea0" stroke-width="1" opacity=".85" />
-                                    <path d="M816 271 L882 271" stroke="#2f6ea0" stroke-width="1" opacity=".85" />
+                                    <path d="M744 250 L847 250 L879 292 L775 292 Z" fill="#14324f" stroke="#2f6ea0" stroke-width="1.2" />
+                                    <path d="M778 250 L810 292 M813 250 L844 292" stroke="#2f6ea0" stroke-width="1" opacity=".85" />
+                                    <path d="M760 271 L863 271" stroke="#2f6ea0" stroke-width="1" opacity=".85" />
                                 </g>
                                 <!-- door + windows -->
-                                <rect x="800" y="470" width="44" height="78" rx="3" fill="#141d31" />
-                                <circle cx="836" cy="510" r="2.4" fill="#ffd98a" />
-                                <rect x="758" y="330" width="34" height="30" rx="3" fill="#4a92d8" opacity=".32" />
-                                <rect x="884" y="330" width="34" height="30" rx="3" fill="#4a92d8" opacity=".32" />
+                                <rect x="746" y="470" width="44" height="78" rx="3" fill="#141d31" />
+                                <circle cx="782" cy="510" r="2.4" fill="#ffd98a" />
+                                <rect x="669" y="330" width="34" height="30" rx="3" fill="#4a92d8" opacity=".32" />
+                                <rect x="886" y="330" width="34" height="30" rx="3" fill="#4a92d8" opacity=".32" />
 
+                                <!-- cars/connectors/powerwall share the garage cluster's left shift -->
+                                <g transform="translate(-150 0)">
                                 <!-- cars (rear view; tapered greenhouse + fender haunches so they read as cars, not boxes) -->
                                 <!-- Model 3 (red sedan): ~1.28:1, glass roof greenhouse tapering into a haunched body -->
                                 <!-- 2019 Tesla Model 3: rear view -->
@@ -530,19 +530,135 @@
                                 </g>
 
                                 <!-- wall connectors -->
-                                <rect x="366" y="430" width="14" height="26" rx="3" fill="#223047" stroke="rgba(255,255,255,.12)" />
+                                <rect x="350" y="430" width="14" height="26" rx="3" fill="#223047" stroke="rgba(255,255,255,.12)" />
                                 <rect x="536" y="430" width="14" height="26" rx="3" fill="#223047" stroke="rgba(255,255,255,.12)" />
 
-                                <!-- Powerwall (mounted on the garage side wall) -->
-                                <g>
-                                    <rect x="318" y="402" width="40" height="118" rx="14" fill="url(#pwGrad)" />
-                                    <rect x="318" y="402" width="40" height="118" rx="14" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1" />
-                                    <rect x="326" y="450" width="24" height="60" rx="4" fill="#2dd36f" opacity=".18" />
-                                    <circle cx="338" cy="420" r="4" fill="#c2402e" />
+                                <!-- Powerwall 3 (mounted on the extended garage wall, left of the first bay) -->
+                                <g id="powerwall3" transform="translate(243.8 393.8) scale(0.17)">
+                                    <defs>
+                                        <linearGradient id="pw3FrontPanel" x1="0" y1="0" x2="1" y2="1">
+                                            <stop offset="0" stop-color="#ffffff"/>
+                                            <stop offset="0.55" stop-color="#f7fafb"/>
+                                            <stop offset="1" stop-color="#e8eef1"/>
+                                        </linearGradient>
+                                        <linearGradient id="pw3LeftEdge" x1="0" y1="0" x2="1" y2="0">
+                                            <stop offset="0" stop-color="#5e666b"/>
+                                            <stop offset="0.35" stop-color="#a7afb3"/>
+                                            <stop offset="1" stop-color="#dfe4e6"/>
+                                        </linearGradient>
+                                        <linearGradient id="pw3RightEdge" x1="0" y1="0" x2="1" y2="0">
+                                            <stop offset="0" stop-color="#dfe4e6"/>
+                                            <stop offset="0.65" stop-color="#9fa8ac"/>
+                                            <stop offset="1" stop-color="#555d62"/>
+                                        </linearGradient>
+                                        <linearGradient id="pw3TopEdge" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0" stop-color="#727a7f"/>
+                                            <stop offset="0.42" stop-color="#c7cdd0"/>
+                                            <stop offset="1" stop-color="#f5f7f8"/>
+                                        </linearGradient>
+                                        <linearGradient id="pw3LogoMetal" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0" stop-color="#d8dcde"/>
+                                            <stop offset="0.35" stop-color="#9ea5a9"/>
+                                            <stop offset="0.7" stop-color="#696f73"/>
+                                            <stop offset="1" stop-color="#b5bbbe"/>
+                                        </linearGradient>
+                                        <filter id="pw3BodyShadow" x="-25%" y="-15%" width="150%" height="145%">
+                                            <feGaussianBlur in="SourceAlpha" stdDeviation="10" result="blur"/>
+                                            <feOffset in="blur" dx="0" dy="12" result="offset"/>
+                                            <feFlood flood-color="#000000" flood-opacity="0.28" result="color"/>
+                                            <feComposite in="color" in2="offset" operator="in" result="shadow"/>
+                                            <feMerge>
+                                                <feMergeNode in="shadow"/>
+                                                <feMergeNode in="SourceGraphic"/>
+                                            </feMerge>
+                                        </filter>
+                                        <filter id="pw3LogoShadow" x="-30%" y="-30%" width="160%" height="170%">
+                                            <feGaussianBlur in="SourceAlpha" stdDeviation="1.4" result="blur"/>
+                                            <feOffset in="blur" dx="0" dy="1.6" result="offset"/>
+                                            <feFlood flood-color="#000000" flood-opacity="0.32" result="color"/>
+                                            <feComposite in="color" in2="offset" operator="in" result="shadow"/>
+                                            <feMerge>
+                                                <feMergeNode in="shadow"/>
+                                                <feMergeNode in="SourceGraphic"/>
+                                            </feMerge>
+                                        </filter>
+                                        <clipPath id="pw3FrontClip">
+                                            <rect x="78" y="34" width="364" height="754" rx="3"/>
+                                        </clipPath>
+                                    </defs>
+                                    <g filter="url(#pw3BodyShadow)">
+                                        <!-- Rear depth / sidewalls -->
+                                        <path d="M66 43 Q66 29 80 27 L440 27 Q454 29 454 43 L454 785
+                                                 Q454 798 441 801 L79 801 Q66 798 66 785 Z"
+                                              fill="#747d82"/>
+                                        <!-- left and right metal returns -->
+                                        <path d="M66 43 Q66 31 79 29 L84 32 L84 791 L78 798
+                                                 Q66 795 66 783 Z"
+                                              fill="url(#pw3LeftEdge)"/>
+                                        <path d="M454 43 Q454 31 441 29 L436 32 L436 791 L442 798
+                                                 Q454 795 454 783 Z"
+                                              fill="url(#pw3RightEdge)"/>
+                                        <!-- top metal return -->
+                                        <path d="M80 27 L440 27 Q452 29 454 40 L449 46 L71 46 L66 40
+                                                 Q68 29 80 27 Z"
+                                              fill="url(#pw3TopEdge)"/>
+                                        <!-- Main white fascia -->
+                                        <rect x="77" y="34" width="366" height="755" rx="3"
+                                              fill="url(#pw3FrontPanel)" stroke="#d5dbde" stroke-width="1.5"/>
+                                        <!-- ultra-subtle face sheen -->
+                                        <g clip-path="url(#pw3FrontClip)">
+                                            <path d="M90 52 C205 31 332 36 438 65 L438 265
+                                                     C324 224 200 221 78 255 L78 52 Z"
+                                                  fill="#ffffff" opacity="0.22"/>
+                                            <path d="M78 603 C192 560 306 568 442 635 L442 789 L78 789 Z"
+                                                  fill="#dce5e9" opacity="0.13"/>
+                                        </g>
+                                        <!-- very fine seams -->
+                                        <path d="M80 35 H440" stroke="#ffffff" stroke-width="1" opacity="0.95"/>
+                                        <path d="M80 788 H440" stroke="#c5cdd1" stroke-width="1" opacity="0.75"/>
+                                        <path d="M78 49 V776" stroke="#ffffff" stroke-width="0.8" opacity="0.6"/>
+                                        <path d="M442 49 V776" stroke="#c3cbd0" stroke-width="0.8" opacity="0.75"/>
+                                        <!-- Tesla T emblem -->
+                                        <g transform="translate(0 1)" filter="url(#pw3LogoShadow)">
+                                            <!-- curved Tesla crown -->
+                                            <path d="M199 169
+                                                     C218 160 238 155 260 155
+                                                     C282 155 302 160 321 169
+                                                     L316 181
+                                                     C299 174 280 170 260 170
+                                                     C240 170 221 174 204 181 Z"
+                                                  fill="url(#pw3LogoMetal)"/>
+                                            <!-- crown top highlight -->
+                                            <path d="M204 169
+                                                     C221 162 240 159 260 159
+                                                     C280 159 299 162 316 169"
+                                                  fill="none" stroke="#eef1f2" stroke-width="1.6" opacity="0.85"/>
+                                            <!-- center blade -->
+                                            <path d="M260 174
+                                                     L272 198
+                                                     L266 225
+                                                     L260 239
+                                                     L254 225
+                                                     L248 198 Z"
+                                                  fill="url(#pw3LogoMetal)"/>
+                                            <!-- blade center highlight -->
+                                            <path d="M260 179 L260 233"
+                                                  fill="none" stroke="#e8ebed" stroke-width="1.2" opacity="0.75"/>
+                                            <!-- subtle lower edge -->
+                                            <path d="M204 181
+                                                     C221 174 240 170 260 170
+                                                     C280 170 299 174 316 181"
+                                                  fill="none" stroke="#686f73" stroke-width="1" opacity="0.75"/>
+                                        </g>
+                                        <!-- bottom chassis line -->
+                                        <rect x="91" y="792" width="338" height="5" rx="2.5"
+                                              fill="#535b60" opacity="0.33"/>
+                                    </g>
+                                </g>
                                 </g>
 
                                 <!-- grid transmission tower (steel lattice truss) -->
-                                <g fill="none" stroke="#8fa0bb" stroke-linecap="round" stroke-linejoin="round">
+                                <g fill="none" stroke="#8fa0bb" stroke-linecap="round" stroke-linejoin="round" transform="translate(120 0)">
                                     <!-- outer chords (tapered body + splayed base) -->
                                     <g stroke-width="2.2">
                                         <path d="M973 548 L984 500 L995 450 L1001 380 L1005 320 L1007 270 L1009 232 L1012 196 L1014 182" />
@@ -609,17 +725,125 @@
                                     </g>
                                 </g>
 
+                                <!-- Bryant heat pump (outdoor unit between the house and the tower) -->
+                                <g id="heatPump" transform="translate(934.7 453) scale(0.1)">
+                                    <defs>
+                                        <linearGradient id="hpCabinet" x1="0" y1="0" x2="1" y2="0">
+                                            <stop offset="0" stop-color="#756f60"/>
+                                            <stop offset="0.08" stop-color="#918b7b"/>
+                                            <stop offset="0.50" stop-color="#847f70"/>
+                                            <stop offset="0.84" stop-color="#726d60"/>
+                                            <stop offset="1" stop-color="#504d46"/>
+                                        </linearGradient>
+                                        <linearGradient id="hpTopPanel" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0" stop-color="#918b7c"/>
+                                            <stop offset="0.55" stop-color="#7e796c"/>
+                                            <stop offset="1" stop-color="#625f57"/>
+                                        </linearGradient>
+                                        <linearGradient id="hpRail" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0" stop-color="#9a9484"/>
+                                            <stop offset="0.42" stop-color="#777265"/>
+                                            <stop offset="1" stop-color="#5e5a50"/>
+                                        </linearGradient>
+                                        <linearGradient id="hpSlat" x1="0" y1="0" x2="1" y2="0">
+                                            <stop offset="0" stop-color="#9a9484"/>
+                                            <stop offset="0.35" stop-color="#777265"/>
+                                            <stop offset="0.72" stop-color="#5c594f"/>
+                                            <stop offset="1" stop-color="#8a8577"/>
+                                        </linearGradient>
+                                        <linearGradient id="hpCoilShade" x1="0" y1="0" x2="1" y2="0">
+                                            <stop offset="0" stop-color="#171a1c"/>
+                                            <stop offset="0.5" stop-color="#44484a"/>
+                                            <stop offset="1" stop-color="#111315"/>
+                                        </linearGradient>
+                                        <pattern id="hpCoilPattern" width="12" height="18" patternUnits="userSpaceOnUse">
+                                            <rect width="12" height="18" fill="#242729"/>
+                                            <path d="M2 0 C10 4,10 14,2 18" fill="none" stroke="#676b6d" stroke-width="1.6" opacity=".8"/>
+                                            <path d="M5 0 C13 4,13 14,5 18" fill="none" stroke="#111315" stroke-width="2.2" opacity=".75"/>
+                                        </pattern>
+                                        <pattern id="hpSlatPattern" width="13" height="76" patternUnits="userSpaceOnUse">
+                                            <rect width="13" height="76" fill="transparent"/>
+                                            <rect x="1.2" y="2" width="10.2" height="68" rx="1.6" fill="url(#hpSlat)"/>
+                                            <path d="M3 5 L3 66" stroke="#bbb5a4" stroke-width=".8" opacity=".45"/>
+                                            <path d="M10.5 5 L10.5 66" stroke="#34322e" stroke-width=".8" opacity=".6"/>
+                                        </pattern>
+                                        <clipPath id="hpGrilleClip">
+                                            <path d="M165 157 Q160 157 160 165 L160 875 Q160 891 177 897 Q500 922 823 897 Q840 891 840 875 L840 165 Q840 157 835 157 Z"/>
+                                        </clipPath>
+                                    </defs>
+                                    <!-- top fan cap -->
+                                    <g>
+                                        <path d="M255 72 Q260 62 278 60 Q500 44 722 60 Q740 62 745 72 L758 126 L242 126 Z"
+                                              fill="url(#hpTopPanel)" stroke="#2e2d2a" stroke-width="2"/>
+                                        <path d="M415 58 Q420 50 436 50 L564 50 Q580 50 585 58 L588 64 L412 64 Z"
+                                              fill="#77736a" stroke="#242424" stroke-width="2"/>
+                                        <path d="M282 61 Q500 48 718 61" fill="none" stroke="#bbb5a5" stroke-width="1.6" opacity=".55"/>
+                                        <path d="M300 58 Q500 46 700 58" fill="none" stroke="#171717" stroke-width="2" opacity=".8"/>
+                                    </g>
+                                    <!-- cabinet shell -->
+                                    <path d="M155 122 Q155 112 170 109 L830 109 Q845 112 845 122 L845 885 Q845 912 817 923 Q500 949 183 923 Q155 912 155 885 Z"
+                                          fill="url(#hpCabinet)" stroke="#45423b" stroke-width="2.5"/>
+                                    <!-- top rim -->
+                                    <path d="M158 116 Q160 108 174 108 L826 108 Q840 108 842 116 L842 134 Q840 141 828 142 L172 142 Q160 141 158 134 Z"
+                                          fill="url(#hpRail)" stroke="#545046" stroke-width="1.6"/>
+                                    <path d="M161 126 L839 126" stroke="#b0aa98" stroke-width="1.2" opacity=".5"/>
+                                    <!-- grille background -->
+                                    <g clip-path="url(#hpGrilleClip)">
+                                        <rect x="160" y="150" width="680" height="748" fill="url(#hpCoilPattern)"/>
+                                        <rect x="160" y="150" width="680" height="748" fill="url(#hpSlatPattern)"/>
+                                        <g fill="url(#hpRail)">
+                                            <rect x="155" y="221" width="690" height="10" rx="4"/>
+                                            <rect x="155" y="291" width="690" height="10" rx="4"/>
+                                            <rect x="155" y="361" width="690" height="10" rx="4"/>
+                                            <rect x="155" y="431" width="690" height="10" rx="4"/>
+                                            <rect x="155" y="501" width="690" height="10" rx="4"/>
+                                            <rect x="155" y="571" width="690" height="10" rx="4"/>
+                                            <rect x="155" y="641" width="690" height="10" rx="4"/>
+                                            <rect x="155" y="711" width="690" height="10" rx="4"/>
+                                            <rect x="155" y="781" width="690" height="10" rx="4"/>
+                                            <rect x="155" y="851" width="690" height="10" rx="4"/>
+                                        </g>
+                                        <g stroke="#b1ab99" stroke-width="1" opacity=".38">
+                                            <path d="M160 222 H840"/><path d="M160 292 H840"/><path d="M160 362 H840"/><path d="M160 432 H840"/><path d="M160 502 H840"/>
+                                            <path d="M160 572 H840"/><path d="M160 642 H840"/><path d="M160 712 H840"/><path d="M160 782 H840"/><path d="M160 852 H840"/>
+                                        </g>
+                                        <rect x="160" y="150" width="680" height="748" fill="url(#hpCoilShade)" opacity=".11"/>
+                                        <rect x="160" y="150" width="680" height="748" fill="none" stroke="#a19b8a" stroke-width="2" opacity=".25"/>
+                                        <path d="M180 150 Q150 520 180 898" fill="none" stroke="#d0cab7" stroke-width="14" opacity=".13"/>
+                                        <path d="M820 150 Q850 520 820 898" fill="none" stroke="#000" stroke-width="20" opacity=".18"/>
+                                    </g>
+                                    <!-- left and right vertical frame lips -->
+                                    <path d="M156 145 Q164 151 165 170 L165 878 Q164 895 179 904" fill="none" stroke="#5d594f" stroke-width="7" opacity=".9"/>
+                                    <path d="M844 145 Q836 151 835 170 L835 878 Q836 895 821 904" fill="none" stroke="#363430" stroke-width="7" opacity=".9"/>
+                                    <!-- bottom skirt -->
+                                    <path d="M158 882 Q160 901 181 908 Q500 934 819 908 Q840 901 842 882 L842 918 Q839 931 824 934 Q500 955 176 934 Q161 931 158 918 Z"
+                                          fill="url(#hpRail)" stroke="#4d4941" stroke-width="1.6"/>
+                                    <path d="M180 917 Q500 938 820 917" fill="none" stroke="#b1aa98" stroke-width="1.2" opacity=".45"/>
+                                    <!-- feet -->
+                                    <path d="M240 933 L382 933 Q377 948 358 950 L268 950 Q247 948 240 933Z" fill="#666257" stroke="#383631" stroke-width="1.5"/>
+                                    <path d="M618 933 L760 933 Q753 948 732 950 L642 950 Q623 948 618 933Z" fill="#666257" stroke="#383631" stroke-width="1.5"/>
+                                    <!-- Bryant badge -->
+                                    <g>
+                                        <path d="M443 333 L557 333 L562 372 Q500 383 438 372 Z" fill="#dc1830" stroke="#f3f3f3" stroke-width="3"/>
+                                        <path d="M446 337 L554 337 L557.5 369 Q500 378 442.5 369 Z" fill="none" stroke="#8d0717" stroke-width="2"/>
+                                        <text x="500" y="365" text-anchor="middle" font-family="Arial Narrow, Arial, Helvetica, sans-serif" font-size="32" font-weight="700" letter-spacing="3" fill="#ffffff">bryant</text>
+                                    </g>
+                                    <path d="M193 153 Q500 137 807 153" fill="none" stroke="#d0cab8" stroke-width="1.2" opacity=".3"/>
+                                </g>
+
                                 <!-- cables (base + animated energy flow). Each path is drawn house -> device. -->
-                                <path class="cable" d="M795 250 C 715 210, 645 172, 567 147" />
-                                <path class="cable-flow" id="flowSolar" d="M795 250 C 715 210, 645 172, 567 147" />
-                                <path class="cable" d="M918 296 C 950 260, 975 232, 995 205" />
-                                <path class="cable-flow" id="flowGrid" d="M918 296 C 950 260, 975 232, 995 205" />
-                                <path class="cable" d="M700 352 C 560 338, 430 338, 340 398" />
-                                <path class="cable-flow" id="flowPw" d="M700 352 C 560 338, 430 338, 340 398" />
-                                <path class="cable" d="M373 452 C 392 486, 410 496, 428 500" />
-                                <path class="cable-flow" id="flowCar1" d="M373 452 C 392 486, 410 496, 428 500" />
-                                <path class="cable" d="M543 452 C 566 486, 592 498, 616 500" />
-                                <path class="cable-flow" id="flowCar2" d="M543 452 C 566 486, 592 498, 616 500" />
+                                <path class="cable" d="M748 250 C 700 215, 630 175, 567 147" />
+                                <path class="cable-flow" id="flowSolar" d="M748 250 C 700 215, 630 175, 567 147" />
+                                <path class="cable" d="M938 296 C 990 258, 1060 225, 1115 205" />
+                                <path class="cable-flow" id="flowGrid" d="M938 296 C 990 258, 1060 225, 1115 205" />
+                                <path class="cable" d="M870 470 C 890 492, 925 501, 958 505" />
+                                <path class="cable-flow" id="flowHp" d="M870 470 C 890 492, 925 501, 958 505" />
+                                <path class="cable" d="M575 352 C 440 330, 270 330, 138 396" />
+                                <path class="cable-flow" id="flowPw" d="M575 352 C 440 330, 270 330, 138 396" />
+                                <path class="cable" d="M207 452 C 225 488, 252 497, 278 500" />
+                                <path class="cable-flow" id="flowCar1" d="M207 452 C 225 488, 252 497, 278 500" />
+                                <path class="cable" d="M393 452 C 416 486, 442 498, 466 500" />
+                                <path class="cable-flow" id="flowCar2" d="M393 452 C 416 486, 442 498, 466 500" />
                             </svg>
 
                         <!-- overlays: left/top are stage px, which equal the SVG viewBox coordinates -->
@@ -627,30 +851,35 @@
                             <div class="flow-node-value" id="flowSolarValue">-- kW</div>
                             <div class="flow-node-label">Solar</div>
                         </div>
-                        <div class="ov flow-node node-home" style="left: 822px; top: 400px;">
+                        <div class="ov flow-node node-home" style="left: 768px; top: 400px;">
                             <div class="flow-node-value" id="flowHomeValue">-- kW</div>
                             <div class="flow-node-label">Home</div>
                         </div>
-                        <div class="ov flow-node node-grid" style="left: 930px; top: 180px;">
+                        <div class="ov flow-node node-grid" style="left: 1050px; top: 180px;">
                             <div class="flow-node-value" id="flowGridValue">0 kW</div>
                             <div class="flow-node-label" id="flowGridLabel">GRID</div>
                         </div>
+                        <div class="ov flow-node node-heatpump" style="left: 985px; top: 420px;">
+                            <div class="flow-node-value" id="flowHeatPumpValue">-- kW</div>
+                            <div class="flow-node-label">Heat Pump</div>
+                        </div>
 
                         <!-- Powerwall readout -->
-                        <div class="mini-card pw-card" style="left: 250px; top: 455px;">
+                        <div class="mini-card pw-card" style="left: 138px; top: 613px;">
                             <div class="mc-head"><span class="mc-name">Powerwall</span><span class="mc-pct" id="powerwallPercent">--%</span></div>
                             <div class="mc-bar"><div class="mc-fill" id="powerwallBar" style="width: 0%"></div></div>
                             <div class="mc-sub"><b id="flowPowerwallValue">-- kW</b> · <span id="powerwallKwh">-- kWh</span></div>
+                            <div class="mc-sub"><span id="powerwallStatus">--</span></div>
                         </div>
 
                         <!-- Vehicles -->
-                        <div class="mini-card" id="model3Card" style="left: 450px; top: 613px;">
+                        <div class="mini-card" id="model3Card" style="left: 300px; top: 613px;">
                             <div class="mc-head"><span class="mc-name" style="color: #ff7aa6;">Model 3</span><span class="mc-pct" id="model3Percent">--%</span></div>
                             <div class="mc-bar"><div class="mc-fill" id="model3Bar" style="width: 0%"></div><div class="mc-limit" id="model3Limit"></div></div>
                             <div class="mc-sub"><b id="model3ChargingRate">-- kW</b> · <span id="model3Kwh">-- kWh</span></div>
                             <div class="mc-sub"><span id="model3Status">--</span> · <span id="model3Range">-- mi</span></div>
                         </div>
-                        <div class="mini-card" id="modelXCard" style="left: 640px; top: 613px;">
+                        <div class="mini-card" id="modelXCard" style="left: 490px; top: 613px;">
                             <div class="mc-head"><span class="mc-name" style="color: #5fb2ff;">Model X</span><span class="mc-pct" id="modelXPercent">--%</span></div>
                             <div class="mc-bar"><div class="mc-fill" id="modelXBar" style="width: 0%"></div><div class="mc-limit" id="modelXLimit"></div></div>
                             <div class="mc-sub"><b id="modelXChargingRate">-- kW</b> · <span id="modelXKwh">-- kWh</span></div>
@@ -777,6 +1006,14 @@
                         <div style="color: #b0c4de;">Loading 16-day forecast…</div>
                     </div>
                 </div>
+
+                <!-- Automation Log — actions taken by the unified energy controller -->
+                <div class="chart-container" id="automationLogContainer">
+                    <h3>🤖 Automation Log</h3>
+                    <div id="automationLogBody" class="automation-log-body">
+                        <div style="color: #b0c4de;">Loading…</div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -792,6 +1029,7 @@
     <script src="prediction-generator.js"></script>
     <script src="chart-maximizer.js"></script>
     <script src="chart-collapse.js"></script>
+    <script src="automation-log.js"></script>
     <script src="main.js"></script>
 </body>
 </html>
