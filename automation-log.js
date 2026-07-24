@@ -90,11 +90,41 @@ function renderAutomationLog(container, entries) {
     container.innerHTML = sorted.map(renderAutomationLogRow).join('');
 }
 
+// Battery-chart banner logic: the controller logs every car command, so if its MOST
+// RECENT car-command outcome was a FAILURE (and recent), surface a warning banner telling
+// the user to act manually. A later successful command clears it. This replaces the old
+// forecast-derived banner (which read the now-frozen charge-automation-state.json).
+function automationWarningFromLog(entries) {
+    if (!entries || !entries.length) return null;
+    const sorted = entries.slice().sort((a, b) => (Date.parse(b.TimeUtc) || 0) - (Date.parse(a.TimeUtc) || 0));
+    for (const e of sorted) {
+        const isFail = e.Action === 'FAIL';
+        const isCarCommand = isFail || e.Action === 'START_CAR' || e.Action === 'STOP_CAR' ||
+            e.Action === 'LIMIT_100' || e.Action === 'LIMIT_85';
+        if (!isCarCommand) continue;      // skip heat-pump-only actions
+        if (!isFail) return null;         // the latest car command succeeded — nothing to warn about
+        const ageMs = Date.now() - (Date.parse(e.TimeUtc) || 0);
+        if (ageMs > 12 * 60 * 60 * 1000) return null; // too old to be actionable
+        return {
+            severity: 'critical',
+            message: `Automation command failed — you may need to act manually. ${e.Reason || e.Target || ''}`.trim()
+        };
+    }
+    return null;
+}
+
 async function loadAutomationLog() {
-    const container = document.getElementById('automationLogBody');
-    if (!container) return;
     const entries = await fetchAutomationLog();
-    renderAutomationLog(container, entries);
+    window.automationLog = entries || [];
+
+    // Update the battery-chart banner from the log (fires on a failed car command).
+    window.automationLogWarning = automationWarningFromLog(entries);
+    if (typeof updateBatteryAutomationBanner === 'function') {
+        updateBatteryAutomationBanner(window.automationLogWarning);
+    }
+
+    const container = document.getElementById('automationLogBody');
+    if (container) renderAutomationLog(container, entries);
 }
 
 document.addEventListener('DOMContentLoaded', function () {

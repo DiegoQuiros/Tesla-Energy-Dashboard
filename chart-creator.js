@@ -1666,23 +1666,19 @@ function createBatteryChart(todayData) {
         }
     });
 
-    // Vertical markers where the automation is predicted to start/stop a car.
-    // Prediction indices sit after today's actual points on the category axis.
-    const markerEvents = (predictions.events || []).map(event => {
-        const carName = event.car === 'Model3' ? 'Model 3' : 'Model X';
-        const timeText = event.time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-        return {
-            chartIndex: actualDataCount + event.index,
-            color: event.car === 'Model3' ? '#ff4444' : '#4477ff',
-            label: `${event.type === 'start' ? '▶' : '⏹'} ${carName} auto-${event.type} ${timeText}`
-        };
-    });
+    // Auto start/stop markers removed 2026-07-23: they mirrored the OLD forecast logic
+    // (predetermined stop/start times), but the unified controller is reactive and has no
+    // future times to draw. The "🤖 Automation Log" card is the record of what actually
+    // happened. (The evening solar/load crossover marker below is unaffected.)
+    const markerEvents = [];
 
     // Evening solar/house-load crossover marker (see computeSolarLoadCrossover)
     const crossover = computeSolarLoadCrossover(todayData, predictions, actualDataCount);
 
-    // Automation health banner (a failed or blocked auto-stop needs manual action)
-    updateBatteryAutomationBanner(predictions.warning);
+    // Automation health banner — now driven by automation-log.js from the controller's log
+    // (fires on a failed car command). Re-apply the latest log-derived warning whenever the
+    // chart rebuilds so it survives refreshes.
+    updateBatteryAutomationBanner(window.automationLogWarning || null);
 
     batteryChart = new Chart(ctx, {
         type: 'line',

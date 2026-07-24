@@ -61,11 +61,14 @@ function generateBatteryPredictions(todayData) {
  * Returns { severity: 'critical'|'caution', message } or null when healthy.
  */
 function assessAutomationWarning(ctx, overrides) {
-    if (ctx.simulationSettings) return null; // user is simulating — predictions aren't real
-    if (window.timeNavigator && !window.timeNavigator.isInLiveMode()) return null; // warnings drive action NOW
-    // Stale feed → "charging right now" wouldn't be trustworthy
-    if (Date.now() - convertToPDT(ctx.latest.LocalTimestamp).getTime() > 45 * 60 * 1000) return null;
+    // SUPERSEDED 2026-07-23: the unified controller replaced the old start/stop logic this
+    // used to mirror, and its state now lives in unified-controller-state.json /
+    // automation-log.json (this read the frozen charge-automation-state.json). The battery
+    // banner is now driven by automation-log.js from the log's FAIL entries, so this always
+    // returns null. Kept as a stub so the predictions object shape is unchanged.
+    return null;
 
+    // eslint-disable-next-line no-unreachable
     let chargingCar = null;
     for (const key of ['Model3', 'ModelX']) {
         if (ctx.latest[key + 'IsAvailable'] && ctx.latest[key + 'IsCharging'] &&
