@@ -110,16 +110,33 @@ async function loadEnergyData() {
         console.error('Error loading energy data:', error);
         document.getElementById('loading').style.display = 'none';
 
-        if (energyData.length > 0) {
-            // We still have data from a previous load - keep showing it
-            // and let the next scheduled refresh try again
+        // Only stay silent when a dashboard is already on screen (a background
+        // refresh failed — keep the last good data and retry next cycle). If the
+        // dashboard was never revealed, showing nothing leaves a blank/black page,
+        // so surface the error instead.
+        const dashboardEl = document.getElementById('dashboard');
+        const dashboardVisible = dashboardEl && dashboardEl.style.display === 'block';
+        if (dashboardVisible && energyData.length > 0) {
             console.warn('Refresh failed, keeping previously loaded data');
         } else {
-            document.getElementById('error').style.display = 'block';
-            document.getElementById('errorMessage').textContent = error.message;
+            const errorEl = document.getElementById('error');
+            const errorMsgEl = document.getElementById('errorMessage');
+            if (errorEl) errorEl.style.display = 'block';
+            if (errorMsgEl) errorMsgEl.textContent = error.message;
         }
         return false;
     }
+}
+
+// Null-safe text setter. updateDashboard() runs BEFORE the dashboard is revealed,
+// so a single missing element must never throw and abort the whole render — that
+// leaves the page blank (loading hidden, dashboard still hidden): the "black
+// screen" seen when a browser is still holding a cached Index.html that predates
+// a newly deployed field (e.g. #powerwallStatus). Skip the missing one instead.
+function setFieldText(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+    else console.warn(`Dashboard element #${id} not found (stale cached markup?) — skipping`);
 }
 
 function updateDashboard() {
@@ -148,25 +165,26 @@ function updateDashboard() {
     const timestampText = window.timeNavigator && !window.timeNavigator.isInLiveMode()
         ? `Historical view: ${lastUpdated.toLocaleString()}`
         : `Last updated: ${lastUpdated.toLocaleString()}`;
-    document.getElementById('lastUpdated').textContent = timestampText;
+    setFieldText('lastUpdated', timestampText);
 
     // Update energy flow display
     updateEnergyFlowCharts(latest);
 
     // Update weather
-    document.getElementById('weatherTemp').textContent = `${latest.WeatherTemperatureF || '--'}°F`;
-    document.getElementById('weatherCondition').textContent = latest.WeatherConditions || 'Unknown';
-    document.getElementById('weatherHumidity').textContent = `${latest.WeatherHumidity || '--'}%`;
-    document.getElementById('weatherSolarImpact').textContent = latest.WeatherSolarImpact ? `${(latest.WeatherSolarImpact * 100).toFixed(0)}%` : '--';
+    setFieldText('weatherTemp', `${latest.WeatherTemperatureF || '--'}°F`);
+    setFieldText('weatherCondition', latest.WeatherConditions || 'Unknown');
+    setFieldText('weatherHumidity', `${latest.WeatherHumidity || '--'}%`);
+    setFieldText('weatherSolarImpact', latest.WeatherSolarImpact ? `${(latest.WeatherSolarImpact * 100).toFixed(0)}%` : '--');
 
     // Update Powerwall
     const batteryPercent = latest.BatteryPercentage || 0;
-    document.getElementById('powerwallPercent').textContent = `${batteryPercent.toFixed(1)}%`;
-    document.getElementById('powerwallKwh').textContent = `${calculateBatteryKwh(batteryPercent, BATTERY_CAPACITIES.POWERWALL)} kWh`;
-    document.getElementById('powerwallBar').style.width = `${batteryPercent}%`;
+    setFieldText('powerwallPercent', `${batteryPercent.toFixed(1)}%`);
+    setFieldText('powerwallKwh', `${calculateBatteryKwh(batteryPercent, BATTERY_CAPACITIES.POWERWALL)} kWh`);
+    const powerwallBar = document.getElementById('powerwallBar');
+    if (powerwallBar) powerwallBar.style.width = `${batteryPercent}%`;
     const powerwallPowerKw = latest.BatteryPowerKw || 0; // - charging, + discharging
-    document.getElementById('powerwallStatus').textContent =
-        powerwallPowerKw < -0.05 ? 'Charging' : powerwallPowerKw > 0.05 ? 'Discharging' : 'Idle';
+    setFieldText('powerwallStatus',
+        powerwallPowerKw < -0.05 ? 'Charging' : powerwallPowerKw > 0.05 ? 'Discharging' : 'Idle');
 
     updateVehicleCard('Model3', 'model3', latest, now, BATTERY_CAPACITIES.MODEL_3);
     updateVehicleCard('ModelX', 'modelX', latest, now, BATTERY_CAPACITIES.MODEL_X);
