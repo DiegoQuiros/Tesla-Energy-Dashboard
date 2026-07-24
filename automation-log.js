@@ -100,21 +100,42 @@ function renderAutomationLog(container, entries) {
     container.innerHTML = sorted.map(renderAutomationLogRow).join('');
 }
 
-// Battery-chart banner logic: the controller logs every car command, so if its MOST
-// RECENT car-command outcome was a FAILURE (and recent), surface a warning banner telling
-// the user to act manually. A later successful command clears it. This replaces the old
-// forecast-derived banner (which read the now-frozen charge-automation-state.json).
+// How long a failed automation command is worth warning about. After this the
+// banner disappears on its own (a stale failure is no longer actionable).
+const AUTOMATION_FAIL_WARN_WINDOW_MS = 4 * 60 * 60 * 1000; // 4 hours
+
+// Battery-chart banner logic: the controller logs every car command, so a FAILED car
+// command surfaces a warning banner telling the user to act manually — but only while it
+// is still actionable. The banner is suppressed when EITHER:
+//   • the failure is older than AUTOMATION_FAIL_WARN_WINDOW_MS (4h), or
+//   • the issue has since been fixed — a LATER successful command on the SAME car (matched
+//     by Target) means the automation regained control of that vehicle.
+// This replaces the old forecast-derived banner (which read the now-frozen
+// charge-automation-state.json).
 function automationWarningFromLog(entries) {
     if (!entries || !entries.length) return null;
-    const sorted = entries.slice().sort((a, b) => (Date.parse(b.TimeUtc) || 0) - (Date.parse(a.TimeUtc) || 0));
-    for (const e of sorted) {
-        const isFail = e.Action === 'FAIL';
-        const isCarCommand = isFail || e.Action === 'START_CAR' || e.Action === 'STOP_CAR' ||
-            e.Action === 'LIMIT_100' || e.Action === 'LIMIT_85';
-        if (!isCarCommand) continue;      // skip heat-pump-only actions
-        if (!isFail) return null;         // the latest car command succeeded — nothing to warn about
-        const ageMs = Date.now() - (Date.parse(e.TimeUtc) || 0);
-        if (ageMs > 12 * 60 * 60 * 1000) return null; // too old to be actionable
+
+    const isCarSuccess = a =>
+        a === 'START_CAR' || a === 'STOP_CAR' || a === 'LIMIT_100' || a === 'LIMIT_85';
+
+    // Most recent SUCCESSFUL car command per target — the "issue fixed" signal.
+    const lastSuccessMsByTarget = {};
+    for (const e of entries) {
+        if (!isCarSuccess(e.Action)) continue;
+        const t = Date.parse(e.TimeUtc) || 0;
+        const key = e.Target || '';
+        if (t > (lastSuccessMsByTarget[key] || 0)) lastSuccessMsByTarget[key] = t;
+    }
+
+    // Newest failure first; warn on the first one that is both recent AND unresolved.
+    const now = Date.now();
+    const fails = entries
+        .filter(e => e.Action === 'FAIL')
+        .sort((a, b) => (Date.parse(b.TimeUtc) || 0) - (Date.parse(a.TimeUtc) || 0));
+    for (const e of fails) {
+        const failMs = Date.parse(e.TimeUtc) || 0;
+        if (now - failMs > AUTOMATION_FAIL_WARN_WINDOW_MS) return null; // sorted newest-first: the rest are older too
+        if ((lastSuccessMsByTarget[e.Target || ''] || 0) > failMs) continue; // a later success on this car fixed it
         return {
             severity: 'critical',
             message: `Automation command failed — you may need to act manually. ${e.Reason || e.Target || ''}`.trim()
