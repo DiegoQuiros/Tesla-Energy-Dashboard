@@ -145,6 +145,13 @@ const SHARED_CONFIG = {
         // Storm / reduced-solar pre-charge: raise BOTH cars' charge limit to 100% when a
         // solar shortfall is coming (grid-avoidance beats battery-degradation), back to 85%
         // once the forecast has been clear a while. Uses Open-Meteo daily shortwave radiation.
+        // KILL-SWITCH (2026-07-23): storm/reduced-solar charge-limit management is DISABLED.
+        // set_charge_limit currently returns result:true but floors the car to its 50% minimum
+        // instead of applying the requested %, and a drizzle weather code (WMO 51/53) was falsely
+        // tripping storm mode despite good radiation — so this feature could only drive the cars
+        // DOWN to 50%, overriding manual limits every cycle. Flip back to true once set_charge_limit
+        // is verified to apply the requested % and the storm trigger is fixed.
+        "STORM_CHARGE_LIMIT_ENABLED": false,
         "NORMAL_CHARGE_LIMIT": 85,       // everyday car charge-limit ceiling
         "STORM_CHARGE_LIMIT": 100,       // pre-charge ceiling when a shortfall is coming
         "STORM_LOOKAHEAD_DAYS": 3,       // scan this many upcoming days for a shortfall

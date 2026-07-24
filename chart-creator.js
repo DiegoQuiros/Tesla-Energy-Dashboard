@@ -567,7 +567,13 @@ function createHvacChart() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
 
+    // Outdoor Temperature starts unchecked on first page load, but we remember the
+    // user's legend toggle across the periodic chart rebuilds so we don't fight them.
+    if (window.hvacOutdoorHidden === undefined) window.hvacOutdoorHidden = true;
+
     if (hvacChart) {
+        const outIdx = hvacChart.data.datasets.findIndex(d => d.label === 'Outdoor Temperature');
+        if (outIdx >= 0) window.hvacOutdoorHidden = !hvacChart.isDatasetVisible(outIdx);
         hvacChart.destroy();
     }
 
@@ -661,7 +667,8 @@ function createHvacChart() {
             borderWidth: 2,
             borderDash: [5, 4],
             pointRadius: 0,
-            spanGaps: true
+            spanGaps: true,
+            hidden: window.hvacOutdoorHidden
         }
     );
 
@@ -683,7 +690,12 @@ function createHvacChart() {
                 y: {
                     ticks: {
                         color: '#888',
-                        callback: function (value) { return value + '°F'; }
+                        stepSize: 1,      // whole-degree ticks only — never 77.5, 78.5, etc.
+                        precision: 0,
+                        callback: function (value) {
+                            // Guard against any fractional tick slipping through.
+                            return Number.isInteger(value) ? value + '°F' : '';
+                        }
                     },
                     grid: { color: 'rgba(255, 255, 255, 0.1)' }
                 }
