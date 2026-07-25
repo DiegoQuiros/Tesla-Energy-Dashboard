@@ -1232,6 +1232,14 @@ function updateSolarKwhStats(todayData, dataSource, currentTime) {
 // changes. Executed decisions come from automation-log.json (facts, shown in
 // live AND historical mode); planned ones come from the controller's published
 // automation-plan.json (live mode only) and render faded with a dashed ring.
+//
+// The plan projects the controller's WHOLE window now (PlannedActions — see
+// ChargeAutomationManager.Plan.cs), so the chart shows the full chain: tonight's
+// heat-pump rungs, tomorrow morning's co-charging start, the lot. It also carries
+// INFORMATIONAL entries for things that visibly happen on the chart without the
+// automation commanding them (a session tapering out when the surplus dies, a car
+// reaching its charge limit, the weekday routine) — those get a dotted ring and an
+// "Expected" tooltip so a prediction is never mistaken for a decision.
 const AUTOMATION_ICONS = {
     START_CAR: { glyph: '▶', label: 'Start car', color: '#39d98a' },
     STOP_CAR: { glyph: '⏹', label: 'Stop car', color: '#ff8c42' },
@@ -1240,7 +1248,11 @@ const AUTOMATION_ICONS = {
     HVAC_SET: { glyph: '≈', label: 'Heat pump set', color: '#4fd1c5' },
     LIMIT_100: { glyph: '⚡', label: 'Charge limit → 100%', color: '#b58cff' },
     LIMIT_85: { glyph: '⚡', label: 'Charge limit → 85%', color: '#9aa7bd' },
-    STORM: { glyph: '⛈', label: 'Storm mode', color: '#ffcf5c' }
+    STORM: { glyph: '⛈', label: 'Storm mode', color: '#ffcf5c' },
+    // Not commands — consequences the chart should still explain (Informational)
+    CAR_TAPERS: { glyph: '~', label: 'Charge tapers out (surplus gone)', color: '#c9d3e3' },
+    CAR_FULL: { glyph: '✓', label: 'Car reaches its charge limit', color: '#c9d3e3' },
+    CAR_ROUTINE: { glyph: '↗', label: 'Weekday routine (car leaves)', color: '#c9d3e3' }
 };
 // Ring color says WHO the action touched, matching the chart's line colors.
 const AUTOMATION_TARGET_COLORS = { Model3: '#ff4444', ModelX: '#4477ff', HeatPump: '#4fd1c5', Cars: '#b58cff' };
@@ -1261,12 +1273,19 @@ function automationChartEvents(gridStart, now) {
 
     const plan = (typeof automationPlanForNow === 'function') ? automationPlanForNow() : null;
     if (plan) {
-        const actions = [plan.PredictedStart, plan.PredictedStop].concat(plan.PlannedHvacSteps || []);
+        // PlannedActions is the whole projected chain; the pre-chain fields are the
+        // fallback for a plan blob published by an older collector.
+        const actions = Array.isArray(plan.PlannedActions)
+            ? plan.PlannedActions
+            : [plan.PredictedStart, plan.PredictedStop].concat(plan.PlannedHvacSteps || []);
         for (const a of actions) {
             if (!a || !AUTOMATION_ICONS[a.Action] || !a.TimePacific) continue;
             const t = parsePlanTime(a.TimePacific);
             if (!t || t < now || t >= gridEnd) continue;
-            events.push({ time: t, action: a.Action, target: a.Target, reason: a.Reason, planned: true });
+            events.push({
+                time: t, action: a.Action, target: a.Target, reason: a.Reason,
+                planned: true, informational: !!a.Informational
+            });
         }
     }
     return events;
@@ -1276,7 +1295,7 @@ function automationChartEvents(gridStart, now) {
 // ring colored by target; planned actions are faded with a dashed ring.
 const automationIconCache = {};
 function automationIconCanvas(ev) {
-    const key = `${ev.action}|${ev.target}|${ev.planned ? 'planned' : 'done'}`;
+    const key = `${ev.action}|${ev.target}|${ev.informational ? 'expected' : ev.planned ? 'planned' : 'done'}`;
     if (automationIconCache[key]) return automationIconCache[key];
     const size = 20;
     const canvas = document.createElement('canvas');
@@ -1286,14 +1305,17 @@ function automationIconCanvas(ev) {
     const style = AUTOMATION_ICONS[ev.action];
     const ring = AUTOMATION_TARGET_COLORS[ev.target] || '#9aa7bd';
 
-    g.globalAlpha = ev.planned ? 0.55 : 1;
+    // Done = solid ring, planned = dashed and faded, expected-but-not-commanded =
+    // dotted and fainter still (nobody is going to issue it).
+    g.globalAlpha = ev.informational ? 0.45 : ev.planned ? 0.55 : 1;
     g.beginPath();
     g.arc(size / 2, size / 2, size / 2 - 1.5, 0, Math.PI * 2);
     g.fillStyle = 'rgba(10, 14, 22, 0.88)';
     g.fill();
     g.lineWidth = 1.5;
     g.strokeStyle = ring;
-    if (ev.planned) g.setLineDash([3, 2]);
+    if (ev.informational) g.setLineDash([1, 2]);
+    else if (ev.planned) g.setLineDash([3, 2]);
     g.stroke();
     g.setLineDash([]);
 
@@ -1311,7 +1333,8 @@ function automationIconCanvas(ev) {
 function automationIconTooltip(ev) {
     const style = AUTOMATION_ICONS[ev.action] || { label: ev.action };
     const when = ev.time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    const lines = [`${ev.planned ? 'Planned' : 'Done'}: ${style.label} — ${ev.target} @ ${when}`];
+    const state = ev.informational ? 'Expected' : ev.planned ? 'Planned' : 'Done';
+    const lines = [`${state}: ${style.label} — ${ev.target} @ ${when}`];
     // Wrap the reason to keep the tooltip readable
     const words = String(ev.reason || '').split(' ');
     let line = '';

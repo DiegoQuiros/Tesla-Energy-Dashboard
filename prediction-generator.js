@@ -60,9 +60,16 @@ function generateBatteryPredictions(todayData) {
         result.deliverableSolar.push(valueAt(p.DeliverableSolarKw, i));
     }
 
-    // Planned car commands, for the chart's markers (icons draw separately from
-    // the plan + log — see automationChartEvents in chart-creator.js).
-    for (const action of [plan.PredictedStart, plan.PredictedStop]) {
+    // Planned car COMMANDS, for the chart's vertical marker lines (the icons draw
+    // separately from the plan + log — see automationChartEvents in chart-creator.js).
+    // The plan projects a chain, so there can be several; informational entries (a
+    // session tapering out, a car hitting its limit) are consequences rather than
+    // commands and get an icon only.
+    const planned = Array.isArray(plan.PlannedActions)
+        ? plan.PlannedActions.filter(a => a && !a.Informational
+            && (a.Action === 'START_CAR' || a.Action === 'STOP_CAR'))
+        : [plan.PredictedStart, plan.PredictedStop];
+    for (const action of planned) {
         if (!action || !action.TimePacific) continue;
         const at = parsePlanTime(action.TimePacific);
         if (!at || at < lastMeasured) continue;
