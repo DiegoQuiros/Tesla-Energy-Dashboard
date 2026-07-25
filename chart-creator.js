@@ -10,6 +10,53 @@ function sliceDataRange(sortedData, rangeStart, rangeEnd) {
     return sortedData.slice(startIdx, endIdx);
 }
 
+// --- Canonical day grid ---------------------------------------------------
+// Charts that overlay two days must plot both against the SAME x axis. Building
+// the axis out of one day's timestamps and then pushing the other day's values in
+// array order lines the days up by POSITION instead of by clock time, so a day
+// the collector skipped slots on renders shifted and squeezed — the same day drew
+// differently as "today" than as the next day's "yesterday" overlay. Instead every
+// series is mapped onto a fixed midnight-to-midnight grid at the collector's
+// cadence; slots with no sample stay null (spanGaps bridges them), so a day always
+// renders identically no matter which side of the overlay it is on.
+const DAY_GRID_SLOTS = Math.round(24 * 60 / DATA_INTERVAL_MINUTES);
+
+// Fractional grid position of a timestamp (0 = midnight, 1 = one slot later).
+// Fractional so a marker can land between two slots.
+function dayGridIndex(date) {
+    return (date.getHours() * 60 + date.getMinutes() + date.getSeconds() / 60) / DATA_INTERVAL_MINUTES;
+}
+
+// One label per grid slot: "12:00 AM", "12:15 AM", ... Built off a fixed
+// reference date so no DST arithmetic is involved.
+function buildDayGridLabels() {
+    const labels = [];
+    for (let i = 0; i < DAY_GRID_SLOTS; i++) {
+        const minutes = i * DATA_INTERVAL_MINUTES;
+        const time = new Date(2000, 0, 1, Math.floor(minutes / 60), minutes % 60);
+        labels.push(time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
+    }
+    return labels;
+}
+
+// Bucket one day's points onto the grid: slot i holds the point closest to that
+// slot's clock time, or null where the collector has no sample for it.
+function mapDayToGrid(dayData) {
+    const slots = new Array(DAY_GRID_SLOTS).fill(null);
+    const distance = new Array(DAY_GRID_SLOTS).fill(Infinity);
+    (dayData || []).forEach(point => {
+        const position = dayGridIndex(convertToPDT(point.LocalTimestamp));
+        const slot = Math.round(position);
+        if (slot < 0 || slot >= DAY_GRID_SLOTS) return;
+        const offBy = Math.abs(position - slot);
+        if (offBy < distance[slot]) {
+            distance[slot] = offBy;
+            slots[slot] = point;
+        }
+    });
+    return slots;
+}
+
 function createCharts() {
     if (typeof Chart === 'undefined') {
         console.error('Chart.js is not loaded');
@@ -24,9 +71,6 @@ function createCharts() {
 
     if (todayData.length === 0) {
         console.warn('No data for today to display in charts');
-        // No battery chart is built on this path, so clear any warning banner
-        // left over from a previous render (e.g. stepping back to an empty day)
-        updateBatteryAutomationBanner(null);
         return;
     }
 
@@ -429,66 +473,18 @@ function createTemperatureChart(todayData) {
 
     const yesterdayData = sliceDataRange(dataSource, yesterday, endOfYesterday);
 
-    // Filter data down to the collector's sampling cadence
-    const filteredData = todayData.filter((point, index) => {
-        if (index === 0) return true; // Always include first point
+    // Both days share one midnight-to-midnight axis so they line up by clock time
+    // rather than by array position — see mapDayToGrid. The grid already spans the
+    // whole day, so the rest of today is simply empty slots.
+    const timeLabels = buildDayGridLabels();
+    const todaySlots = mapDayToGrid(todayData);
+    const yesterdaySlots = mapDayToGrid(yesterdayData);
 
-        const date = convertToPDT(point.LocalTimestamp);
-        return date.getMinutes() % DATA_INTERVAL_MINUTES === 0; // e.g. :00, :15, :30, :45
-    });
+    const outdoorTempAt = point =>
+        (point && point.WeatherTemperatureF && point.WeatherTemperatureF > -50) ? point.WeatherTemperatureF : null;
 
-    const filteredYesterdayData = yesterdayData.filter((point, index) => {
-        if (index === 0) return true; // Always include first point
-
-        const date = convertToPDT(point.LocalTimestamp);
-        return date.getMinutes() % DATA_INTERVAL_MINUTES === 0; // e.g. :00, :15, :30, :45
-    });
-
-    const timeLabels = filteredData.map(point => {
-        const date = convertToPDT(point.LocalTimestamp);
-        return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-    });
-
-    const outdoorTemps = filteredData.map(point =>
-        (point.WeatherTemperatureF && point.WeatherTemperatureF > -50) ? point.WeatherTemperatureF : null
-    );
-
-    // Yesterday's temperature data
-    const outdoorTempsYesterday = filteredYesterdayData.map(point =>
-        (point.WeatherTemperatureF && point.WeatherTemperatureF > -50) ? point.WeatherTemperatureF : null
-    );
-
-    // Generate simple forecast for remaining hours (only for outdoor temperature) - only in live mode
-    const now = window.timeNavigator && !window.timeNavigator.isInLiveMode()
-        ? window.timeNavigator.getCurrentTime()
-        : new Date();
-
-    // Create forecast points to fill the rest of the day until 11:59 PM - only in live mode
-    const endOfDay = new Date(now);
-    endOfDay.setHours(23, 59, 59);
-
-    currentTime = new Date(now);
-    // Start from the next 15-minute interval
-    currentTime.setMinutes(Math.ceil(currentTime.getMinutes() / 15) * 15, 0, 0);
-
-    while (currentTime <= endOfDay) {
-        // Simple forecast: cooler at night, warmer during day
-        const hour = currentTime.getHours();
-        let tempAdjustment = 0;
-        if (hour >= 6 && hour <= 18) {
-            // Daytime: slightly warmer
-            tempAdjustment = Math.sin((hour - 6) / 12 * Math.PI) * 4;
-        } else {
-            // Nighttime: cooler
-            tempAdjustment = -3;
-        }
-
-        timeLabels.push(currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
-        outdoorTemps.push(null);
-
-        // Move to next 15-minute interval
-        currentTime.setMinutes(currentTime.getMinutes() + 15);
-    }
+    const outdoorTemps = todaySlots.map(outdoorTempAt);
+    const outdoorTempsYesterday = yesterdaySlots.map(outdoorTempAt);
 
     const datasets = [
         // Yesterday's data (darker shades, thinner lines)
@@ -1241,9 +1237,9 @@ function houseLoadExcludingCars(point) {
 // cover the house load (heat pump included, cars excluded), after which the
 // Powerwall must discharge to run the house. Combines today's actual data with
 // the rest-of-day prediction so the marker works whether the crossover has
-// already happened or is still ahead. Returns { chartIndex, time } (chartIndex
-// may be fractional, interpolated between samples) or null if there is no such
-// crossover (e.g. solar never exceeds the house load).
+// already happened or is still ahead. Returns { time } (interpolated between the
+// two straddling samples) or null if there is no such crossover (e.g. solar never
+// exceeds the house load).
 //
 // Crucially this must NOT be fooled by curtailment: once the Powerwall is full
 // the inverter throttles production down toward the house load (or toward
@@ -1253,7 +1249,7 @@ function houseLoadExcludingCars(point) {
 // So the measured side treats any slot where the Powerwall is full and NOT
 // discharging as "still covered", and the predicted side uses the DELIVERABLE
 // (uncurtailed) solar rather than the curtailed produced line.
-function computeSolarLoadCrossover(todayData, predictions, actualDataCount) {
+function computeSolarLoadCrossover(todayData, predictions) {
     const solar = [];
     const load = [];
     const times = [];
@@ -1294,14 +1290,13 @@ function computeSolarLoadCrossover(todayData, predictions, actualDataCount) {
         const d1 = solar[i + 1] - load[i + 1];
         if (d0 >= 0 && d1 < 0) {
             const frac = d0 / (d0 - d1); // 0..1 where solar meets load between i and i+1
-            const chartIndex = i + frac;
             let time = null;
             if (times[i] && times[i + 1]) {
                 time = new Date(times[i].getTime() + frac * (times[i + 1].getTime() - times[i].getTime()));
             } else {
                 time = times[i] || times[i + 1];
             }
-            result = { chartIndex, time };
+            result = time ? { time } : result;
         }
     }
     return result;
@@ -1352,30 +1347,6 @@ const solarCrossoverPlugin = {
     }
 };
 
-// Charge-automation health warning shown INSIDE the battery chart (a charge_stop
-// that failed or is blocked by its cooldown needs manual action). Rendered as an
-// overlay pinned to the top of the chart's plot area so it reads as part of the
-// chart, not a separate box above it. pointer-events:none keeps the legend and
-// canvas underneath clickable. warning = { severity, message } or null to hide.
-function updateBatteryAutomationBanner(warning) {
-    const wrapper = document.querySelector('#batteryChartContainer .chart-wrapper');
-    if (!wrapper) return;
-    let banner = document.getElementById('batteryAutomationWarning');
-    if (!warning) {
-        if (banner) banner.remove();
-        return;
-    }
-    if (!banner) {
-        banner = document.createElement('div');
-        banner.id = 'batteryAutomationWarning';
-    }
-    // Keep it inside the chart wrapper even if the chart was rebuilt/moved
-    if (banner.parentElement !== wrapper) wrapper.appendChild(banner);
-    banner.className = 'automation-warning ' +
-        (warning.severity === 'critical' ? 'automation-warning-critical' : 'automation-warning-caution');
-    banner.textContent = '⚠️ ' + warning.message;
-}
-
 // Remembers the user's show/hide selection per line across chart rebuilds
 // (mode switches and periodic refreshes destroy and recreate the chart).
 // Keyed by a stable identity ("today:Powerwall", "yesterday:Model 3", ...).
@@ -1419,67 +1390,61 @@ function createBatteryChart(todayData) {
 
     const yesterdayData = sliceDataRange(energyData, yesterday, endOfYesterday);
 
-    const timeLabels = todayData.map(point => {
-        const date = convertToPDT(point.LocalTimestamp);
-        return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-    });
+    const todayStart = new Date(currentTime);
+    todayStart.setHours(0, 0, 0, 0);
 
-    const powerwallData = todayData.map(point => point.BatteryPercentage || 0);
+    // Both days (and the forecast) share one midnight-to-midnight axis so they line
+    // up by clock time rather than by array position — see mapDayToGrid.
+    const timeLabels = buildDayGridLabels();
+    const todaySlots = mapDayToGrid(todayData);
+    const yesterdaySlots = mapDayToGrid(yesterdayData);
 
-    // Function to create vehicle data with proper gap handling
-    function createVehicleData(vehiclePrefix, dataSet) {
-        const vehicleData = [];
+    const powerwallPercent = point => point ? (point.BatteryPercentage || 0) : null;
+    const powerwallData = todaySlots.map(powerwallPercent);
+    const powerwallYesterdayData = yesterdaySlots.map(powerwallPercent);
+
+    // Build a car's series on the day grid, with proper gap handling
+    function createVehicleData(vehiclePrefix, daySlots, dayStart) {
+        const vehicleData = new Array(DAY_GRID_SLOTS).fill(null);
         let lastKnownLevel = null;
-        let lastKnownTimestamp = null;
 
-        // First, find the last datapoint before the dataSet to establish starting level
-        const dataSetStart = new Date(currentTime);
-        if (dataSet === todayData) {
-            dataSetStart.setHours(0, 0, 0, 0);
-        } else {
-            dataSetStart.setTime(yesterday.getTime());
-        }
-
-        // Look for last available data before dataSet
+        // Look for the last available data before the day, to establish a starting level
         for (let i = energyData.length - 1; i >= 0; i--) {
             const point = energyData[i];
             const pointDate = convertToPDT(point.LocalTimestamp);
 
-            if (pointDate < dataSetStart && point[`${vehiclePrefix}IsAvailable`] && point[`${vehiclePrefix}Battery`] != null) {
+            if (pointDate < dayStart && point[`${vehiclePrefix}IsAvailable`] && point[`${vehiclePrefix}Battery`] != null) {
                 lastKnownLevel = point[`${vehiclePrefix}Battery`];
-                lastKnownTimestamp = pointDate;
                 break;
             }
         }
+        const levelBeforeDay = lastKnownLevel;
 
-        // Process dataSet
-        for (let i = 0; i < dataSet.length; i++) {
-            const point = dataSet[i];
-            const pointDate = convertToPDT(point.LocalTimestamp);
+        // Fill the slots the car actually reported on; the rest stay null (gaps)
+        let firstSlotWithData = -1;
+        let lastSlotWithData = -1;
+        for (let i = 0; i < DAY_GRID_SLOTS; i++) {
+            const point = daySlots[i];
+            if (!point) continue;
+            if (firstSlotWithData < 0) firstSlotWithData = i;
+            lastSlotWithData = i;
 
             if (point[`${vehiclePrefix}IsAvailable`] && point[`${vehiclePrefix}Battery`] != null) {
-                // Vehicle is available with valid battery data
                 lastKnownLevel = point[`${vehiclePrefix}Battery`];
-                lastKnownTimestamp = pointDate;
-                vehicleData.push(lastKnownLevel);
-            } else if (i === 0 && lastKnownLevel !== null && dataSet === todayData) {
-                // Special case: first data point of today with no battery data
-                // Use the last known level from yesterday to fill the gap
-                vehicleData.push(lastKnownLevel);
-            } else if (lastKnownLevel !== null) {
-                // Vehicle data not available but we have a last known level
-                // For gaps, we omit the datapoint (push null)
-                vehicleData.push(null);
-            } else {
-                // No previous data available
-                vehicleData.push(null);
+                vehicleData[i] = lastKnownLevel;
             }
         }
 
-        // Always ensure we have a datapoint for the current time (last datapoint)
-        if (vehicleData.length > 0 && lastKnownLevel !== null) {
-            // Replace the last datapoint with the last known level to ensure continuity
-            vehicleData[vehicleData.length - 1] = lastKnownLevel;
+        // The day's first sample has no battery data: use the level carried over from
+        // the previous day so the line doesn't start in mid-chart.
+        if (firstSlotWithData >= 0 && vehicleData[firstSlotWithData] === null && levelBeforeDay !== null) {
+            vehicleData[firstSlotWithData] = levelBeforeDay;
+        }
+
+        // Always ensure we have a datapoint for the day's last sample (the current time
+        // in live mode), even if the car was asleep for it — its level still applies.
+        if (lastSlotWithData >= 0 && vehicleData[lastSlotWithData] === null && lastKnownLevel !== null) {
+            vehicleData[lastSlotWithData] = lastKnownLevel;
         }
 
         return {
@@ -1489,19 +1454,26 @@ function createBatteryChart(todayData) {
     }
 
     // Create vehicle datasets for yesterday
-    const model3YesterdayResult = createVehicleData('Model3', yesterdayData);
-    const modelXYesterdayResult = createVehicleData('ModelX', yesterdayData);
+    const model3YesterdayResult = createVehicleData('Model3', yesterdaySlots, yesterday);
+    const modelXYesterdayResult = createVehicleData('ModelX', yesterdaySlots, yesterday);
 
     // Create vehicle datasets for today
-    const model3Result = createVehicleData('Model3', todayData);
-    const modelXResult = createVehicleData('ModelX', todayData);
+    const model3Result = createVehicleData('Model3', todaySlots, todayStart);
+    const modelXResult = createVehicleData('ModelX', todaySlots, todayStart);
 
-    // Create yesterday's powerwall data
-    const powerwallYesterdayData = yesterdayData.map(point => point.BatteryPercentage || 0);
-
-    // Generate predictions for the rest of the day
+    // Generate predictions for the rest of the day, placed on the grid by the clock
+    // time of each forecast slot (they continue past today's last actual sample).
     const predictions = generateBatteryPredictions(todayData);
-    const actualDataCount = todayData.length;
+    const predictionTimes = predictions.times || [];
+    function predictionSeries(values) {
+        const series = new Array(DAY_GRID_SLOTS).fill(null);
+        predictionTimes.forEach((time, i) => {
+            if (!time || values[i] == null) return;
+            const slot = Math.round(dayGridIndex(time));
+            if (slot >= 0 && slot < DAY_GRID_SLOTS) series[slot] = values[i];
+        });
+        return series;
+    }
 
     // Check if simulation is active
     const isSimulationActive = window.batterySimulator && window.batterySimulator.isSimulationActive();
@@ -1539,7 +1511,7 @@ function createBatteryChart(todayData) {
             label: '',
             dayGroup: 'today',
             predictionFor: 'Powerwall',
-            data: Array(actualDataCount).fill(null).concat(predictions.powerwall),
+            data: predictionSeries(predictions.powerwall),
             borderColor: 'transparent', // No connecting lines
             backgroundColor: 'rgba(0, 204, 0, 0.3)',
             pointStyle: 'circle',
@@ -1597,7 +1569,7 @@ function createBatteryChart(todayData) {
                 label: '',
                 dayGroup: 'today',
                 predictionFor: model3Label,
-                data: Array(actualDataCount).fill(null).concat(predictions.model3),
+                data: predictionSeries(predictions.model3),
                 borderColor: 'transparent',
                 backgroundColor: predictionBgColor,
                 pointStyle: isSimulationActive ? 'rectRot' : 'circle',
@@ -1656,7 +1628,7 @@ function createBatteryChart(todayData) {
                 label: '',
                 dayGroup: 'today',
                 predictionFor: modelXLabel,
-                data: Array(actualDataCount).fill(null).concat(predictions.modelX),
+                data: predictionSeries(predictions.modelX),
                 borderColor: 'transparent',
                 backgroundColor: predictionBgColor,
                 pointStyle: isSimulationActive ? 'rectRot' : 'circle',
@@ -1684,19 +1656,16 @@ function createBatteryChart(todayData) {
     // happened. (The evening solar/load crossover marker below is unaffected.)
     const markerEvents = [];
 
-    // Evening solar/house-load crossover marker (see computeSolarLoadCrossover)
-    const crossover = computeSolarLoadCrossover(todayData, predictions, actualDataCount);
-
-    // Automation health banner — now driven by automation-log.js from the controller's log
-    // (fires on a failed car command). Re-apply the latest log-derived warning whenever the
-    // chart rebuilds so it survives refreshes.
-    updateBatteryAutomationBanner(window.automationLogWarning || null);
+    // Evening solar/house-load crossover marker (see computeSolarLoadCrossover).
+    // It walks the day in sample order, so re-anchor it to the grid by its clock time.
+    const crossover = computeSolarLoadCrossover(todayData, predictions);
+    if (crossover) crossover.chartIndex = dayGridIndex(crossover.time);
 
     batteryChart = new Chart(ctx, {
         type: 'line',
         plugins: [autoChargeMarkersPlugin, solarCrossoverPlugin],
         data: {
-            labels: timeLabels.concat(predictions.labels),
+            labels: timeLabels,
             datasets: datasets
         },
         options: {

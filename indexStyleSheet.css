@@ -463,8 +463,8 @@ body {
     box-shadow: none;
     display: flex;
     flex-direction: column;
-    /* An automation-warning banner can push content past the viewport; let the
-       maximized container scroll so the chart bottom stays reachable */
+    /* A tall maximized chart can run past the viewport; let the container scroll
+       so the chart bottom stays reachable */
     overflow-y: auto;
 }
 
@@ -923,26 +923,27 @@ body {
     }
 }
 
-/* Charge-automation health warning, overlaid inside the Battery Levels chart.
-   Absolutely positioned within .chart-wrapper (which is position:relative) so it
-   sits on top of the plot area rather than in a box above it. */
-.automation-warning {
-    position: absolute;
-    top: 8px;
-    left: 10px;
-    right: 10px;
-    z-index: 5;
-    padding: 9px 13px;
-    border-radius: 8px;
-    font-weight: 600;
-    line-height: 1.35;
-    font-size: 0.88rem;
-    /* Let clicks (legend toggles, etc.) pass through to the chart underneath */
-    pointer-events: none;
-    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.45);
+/* Automation Alerts card — failed-command warnings live in their own card above the
+   battery chart (see #automationAlertsCard) rather than overlaying it. Banners stack
+   in normal flow with a gap between them. */
+.automation-alerts-card .automation-alerts-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
 
-/* Opaque-enough backgrounds so the message stays readable over chart lines */
+.automation-warning {
+    padding: 12px 16px;
+    border-radius: 10px;
+    font-weight: 600;
+    line-height: 1.4;
+    font-size: 0.95rem;
+    /* Failure reasons can contain long unbroken tokens (e.g. a txid); wrap them
+       so a banner never overflows its card on a narrow screen */
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
+
 .automation-warning-critical {
     background: rgba(96, 18, 26, 0.94);
     border: 1px solid rgba(220, 53, 69, 0.85);

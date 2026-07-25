@@ -93,6 +93,14 @@ async function loadEnergyData() {
 
         updateDashboard();
 
+        // Refresh the Automation Log / Alerts cards on the same cycle so newly
+        // logged actions appear without the user reloading the page. Fire and
+        // forget — it renders itself and never throws (fetch errors are caught).
+        // Unforced, so it no-ops against the page-load fetch a moment earlier.
+        if (typeof window.loadAutomationLog === 'function') {
+            window.loadAutomationLog();
+        }
+
         if (typeof Chart !== 'undefined') {
             createCharts();
         } else {

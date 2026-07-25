@@ -29,6 +29,7 @@ const SHARED_CONFIG = {
         "GRID_DECAY_MINUTES": 60,       // fade out the current grid import (snapshot only describes right now)
         "SOLAR_SCALE_WINDOW_HOURS": 3,  // window of today's solar used to estimate weather vs profile
         "MIN_EV_CHARGE_KW": 1.2,        // below ~5A the car won't charge at all
+        "EV_STARVE_SLOTS": 2,           // 15-min slots below MIN_EV_CHARGE_KW of surplus before a solar-following session is modeled as ending on its own (measured: rare, ~2.5% of session endings, and always within a slot or two of the surplus collapsing)
         "DEFAULT_EV_CHARGE_LIMIT": 85,  // cars normally charge to 85% (raised from 80% on 2026-07-20)
         "DEFAULT_WALL_CONNECTOR_KW": 6, // fallback wall connector power (24A x 249V)
         "WALL_CONNECTOR_VOLTAGE": 249,  // home wall connector voltage, for amps -> kW conversion
@@ -144,18 +145,14 @@ const SHARED_CONFIG = {
 
         // Storm / reduced-solar pre-charge: raise BOTH cars' charge limit to 100% when a
         // solar shortfall is coming (grid-avoidance beats battery-degradation), back to 85%
-        // once the forecast has been clear a while. Uses Open-Meteo daily shortwave radiation.
-        // KILL-SWITCH (2026-07-23): storm/reduced-solar charge-limit management is DISABLED.
-        // set_charge_limit currently returns result:true but floors the car to its 50% minimum
-        // instead of applying the requested %, and a drizzle weather code (WMO 51/53) was falsely
-        // tripping storm mode despite good radiation — so this feature could only drive the cars
-        // DOWN to 50%, overriding manual limits every cycle. Flip back to true once set_charge_limit
-        // is verified to apply the requested % and the storm trigger is fixed.
-        "STORM_CHARGE_LIMIT_ENABLED": false,
+        // as soon as the forecast is clear. Uses Open-Meteo daily shortwave radiation.
+        // STATELESS: recomputed from the forecast every 15-min cycle, so the limit always
+        // reflects the CURRENT forecast (no latched mode, no exit debounce — the old
+        // STORM_EXIT_CLEAR_HOURS=24 slow-exit was removed 2026-07-25 because a frozen flag
+        // held the cars at 100% after the weather cleared).
         "NORMAL_CHARGE_LIMIT": 85,       // everyday car charge-limit ceiling
         "STORM_CHARGE_LIMIT": 100,       // pre-charge ceiling when a shortfall is coming
         "STORM_LOOKAHEAD_DAYS": 3,       // scan this many upcoming days for a shortfall
-        "STORM_SOLAR_MJ_THRESHOLD": 16,  // a day whose shortwave_radiation_sum (MJ/m²) is below this counts as a poor-solar day (a clear summer day here is ~28-30; CALIBRATE)
-        "STORM_EXIT_CLEAR_HOURS": 24     // the forecast must stay clear this long before dropping the limit back to 85% (enter fast, exit slow)
+        "STORM_SOLAR_MJ_THRESHOLD": 16   // a day whose shortwave_radiation_sum (MJ/m²) is below this counts as a poor-solar day (a clear summer day here is ~28-30; CALIBRATE)
     }
 };

@@ -236,7 +236,15 @@ function buildPredictionContext(todayData) {
         Model3: lastKnownCarState(dataSource, 'Model3', now),
         ModelX: lastKnownCarState(dataSource, 'ModelX', now)
     };
-    const level = {}, limit = {}, chargingNow = {}, actualKw = {}, capKw = {}, wallConnectorKw = {};
+    // Is a live session solar-following (Tesla throttling the amps to protect the
+    // Powerwall) or a fixed-rate session someone forced on — winter grid charging at
+    // 48 A / 11.5 kW with the pack flat at 0%, say? Only the former follows the
+    // surplus down; a forced session holds its rate and pulls from pack/grid. A
+    // throttled car sitting on its ~5 A floor legitimately overdraws the surplus by
+    // up to MIN_EV_CHARGE_KW, so that much slack is not evidence of a forced session.
+    const nowSurplusKw = Math.max(0, (latest.SolarPowerKw || 0) - recentBaseLoad);
+    const level = {}, limit = {}, chargingNow = {}, actualKw = {}, capKw = {}, wallConnectorKw = {},
+        surplusFollowing = {};
     for (const key of ['Model3', 'ModelX']) {
         level[key] = state[key] ? state[key][key + 'Battery'] : 0;
         limit[key] = (state[key] && state[key][key + 'ChargeLimit']) || PREDICTION_CONFIG.DEFAULT_EV_CHARGE_LIMIT;
@@ -249,6 +257,7 @@ function buildPredictionContext(todayData) {
         wallConnectorKw[key] = state[key] && state[key][key + 'ChargeAmps'] > 0
             ? state[key][key + 'ChargeAmps'] * PREDICTION_CONFIG.WALL_CONNECTOR_VOLTAGE / 1000
             : PREDICTION_CONFIG.DEFAULT_WALL_CONNECTOR_KW;
+        surplusFollowing[key] = actualKw[key] <= nowSurplusKw + PREDICTION_CONFIG.MIN_EV_CHARGE_KW;
     }
 
     return {
@@ -257,7 +266,7 @@ function buildPredictionContext(todayData) {
         recentBaseLoad, solarNoon,
         gridImportKw: Math.max(0, latest.GridPowerKw || 0),
         startPowerwallKwh: ((latest.BatteryPercentage || 0) / 100) * BATTERY_CAPACITIES.POWERWALL,
-        state, level, limit, chargingNow, actualKw, capKw, wallConnectorKw
+        state, level, limit, chargingNow, actualKw, capKw, wallConnectorKw, surplusFollowing
     };
 }
 
@@ -336,6 +345,10 @@ function simulateDay(ctx, overrides) {
 
     const forcedOff = (key, t) => key in stops && t >= stops[key];
 
+    // Consecutive slots with too little surplus to keep a car charging (see the
+    // three-stage throttle note in the loop below).
+    let starvedSlots = 0;
+
     let currentTime = nextSlotBoundary(ctx.now);
     while (currentTime <= ctx.endOfDay) {
         const minutesFromNow = (currentTime - ctx.now) / (1000 * 60);
@@ -372,6 +385,32 @@ function simulateDay(ctx, overrides) {
             Math.max(0, (BATTERY_CAPACITIES.POWERWALL - powerwallKwh) / 0.25));
         const evSurplusKw = Math.max(0, solarKw - houseLoadKw - powerwallNeedKw);
 
+        // A charging car's rate follows the surplus DOWN as well as up. Tesla
+        // throttles the connector's amps to hold the Powerwall rather than
+        // discharging the pack into the car — measured across 2,321 samples with a
+        // car charging at home and the pack >=97%, the Powerwall's median net power
+        // is 0.00 kW and the car draws exactly the surplus. Three stages:
+        //   1. surplus >= the car's draw  -> unchanged, the car takes what it wants
+        //   2. surplus  < the car's draw  -> the car throttles down, the pack holds
+        //   3. surplus  < the ~5 A floor  -> the car CANNOT throttle further, so it
+        //      keeps pulling the minimum and the pack finally does drain (measured
+        //      2026-06-13: car pinned at 3-4 A, pack 98.2% -> 95.2%); if the surplus
+        //      stays that low the session ends on its own (rare — 16 of ~640 observed
+        //      session endings, e.g. Model X 2026-07-15 4:45 PM at 6 A / 96.7%).
+        // Without this ceiling the sim held a charging car at its last measured rate
+        // and made the PACK absorb the shortfall, inventing an afternoon drain that
+        // never happens (the 2026-07-25 chart: 100% -> 94.6% at 4:45 PM).
+        const evAvailableKw = Math.max(0, solarKw - houseLoadKw + gridCreditKw);
+        const evCeilingKw = Math.max(PREDICTION_CONFIG.MIN_EV_CHARGE_KW, evAvailableKw);
+        // Only a solar-following session is throttled by the surplus; a forced
+        // fixed-rate session holds its amps and pulls from the pack/grid instead.
+        const ceilingFor = (key) => ctx.surplusFollowing[key] ? evCeilingKw : Infinity;
+        starvedSlots = evAvailableKw < PREDICTION_CONFIG.MIN_EV_CHARGE_KW ? starvedSlots + 1 : 0;
+        if (starvedSlots > PREDICTION_CONFIG.EV_STARVE_SLOTS) {
+            if (ctx.surplusFollowing.Model3) charging.Model3 = false;
+            if (ctx.surplusFollowing.ModelX) charging.ModelX = false;
+        }
+
         // MODEL 3 charging power: surplus-following, floored at the measured rate
         // (the manager grants the car a minimum share even while the Powerwall
         // charges) and capped at the requested amps
@@ -387,7 +426,8 @@ function simulateDay(ctx, overrides) {
             if (applyWeekdayStop && isWeekday && currentTime > todayTwoFifteen) {
                 model3ChargingPowerKw = 0;
             } else {
-                model3ChargingPowerKw = Math.min(ctx.capKw.Model3, Math.max(ctx.actualKw.Model3, evSurplusKw));
+                model3ChargingPowerKw = Math.min(ctx.capKw.Model3, ceilingFor('Model3'),
+                    Math.max(ctx.actualKw.Model3, evSurplusKw));
             }
         } else if (chargesFromStart(ctx, o, 'Model3', currentTime, level, stops)) {
             if (evSurplusKw >= PREDICTION_CONFIG.MIN_EV_CHARGE_KW) {
@@ -400,7 +440,8 @@ function simulateDay(ctx, overrides) {
         if (ctx.simulationSettings && ctx.simulationSettings.ModelXAmps > 0) {
             modelXChargingPowerKw = ctx.simulationSettings.ModelXAmps * PREDICTION_CONFIG.WALL_CONNECTOR_VOLTAGE / 1000;
         } else if (!ctx.simulationSettings && charging.ModelX && ctx.actualKw.ModelX > 0 && !forcedOff('ModelX', currentTime)) {
-            modelXChargingPowerKw = Math.min(ctx.capKw.ModelX, Math.max(ctx.actualKw.ModelX, evSurplusKw));
+            modelXChargingPowerKw = Math.min(ctx.capKw.ModelX, ceilingFor('ModelX'),
+                Math.max(ctx.actualKw.ModelX, evSurplusKw));
         } else if (model3ChargingPowerKw === 0 && chargesFromStart(ctx, o, 'ModelX', currentTime, level, stops)) {
             // Single wall connector: the auto-started car only charges once the
             // other car's session is over, from whatever surplus the Powerwall
