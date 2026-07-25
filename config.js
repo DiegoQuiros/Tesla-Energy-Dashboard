@@ -1,8 +1,11 @@
 // Configuration - Update this URL to your Azure Blob Storage public URL
 const AZURE_BLOB_URL = 'https://powermanagestorage.blob.core.windows.net/energy-data/energy-data.json';
 const DAILY_SUMMARY_URL = 'https://powermanagestorage.blob.core.windows.net/energy-data/daily-summary.json';
-const CHARGE_AUTOMATION_STATE_URL = 'https://powermanagestorage.blob.core.windows.net/energy-data/charge-automation-state.json';
 const AUTOMATION_LOG_URL = 'https://powermanagestorage.blob.core.windows.net/energy-data/automation-log.json';
+// The unified controller's forward projection of its OWN start/stop rules, republished
+// every collector cycle. The battery chart renders these markers instead of re-deciding
+// them in JavaScript — see the header of ChargeAutomationManager.Plan.cs.
+const AUTOMATION_PLAN_URL = 'https://powermanagestorage.blob.core.windows.net/energy-data/automation-plan.json';
 
 let energyData = [];
 let dailySummaryData = []; // Per-day kWh totals maintained by the collector job
@@ -30,3 +33,10 @@ const BATTERY_CAPACITIES = SHARED_CONFIG.BATTERY_CAPACITIES;
 
 // Collector sampling cadence (minutes) — single source of truth in shared-config.js
 const DATA_INTERVAL_MINUTES = SHARED_CONFIG.DATA_INTERVAL_MINUTES;
+
+// How far past midnight the Battery Levels chart looks. The day the chart shows
+// ends at 100%-or-not and then drains all night, so the interesting part of the
+// forecast — the overnight low and the next morning's recharge — sits past
+// midnight. Drives the chart's grid; the value lives in shared-config.js because
+// the C# collector publishes the projection over exactly this horizon. Must be <= 24.
+const BATTERY_CHART_EXTRA_HOURS = SHARED_CONFIG.PREDICTION_CONFIG.BATTERY_CHART_EXTRA_HOURS;

@@ -50,7 +50,13 @@ const SHARED_CONFIG = {
         // 3-5 PM decision window) so the stop lands at the true latest-safe moment —
         // later than a cautious manual stop when the day allows, without missing 100%.
         "POTENTIAL_AFTERNOON_FACTOR": 0.80,     // fraction of the mirrored-morning envelope the panels deliver post-noon
-        "POTENTIAL_AFTERNOON_RAMP_HOURS": 1.0   // hours past solar noon to ramp from 1.0 down to AFTERNOON_FACTOR
+        "POTENTIAL_AFTERNOON_RAMP_HOURS": 1.0,  // hours past solar noon to ramp from 1.0 down to AFTERNOON_FACTOR
+
+        // How far past midnight the Battery Levels chart (and therefore the projection
+        // the collector publishes in automation-plan.json) runs, so the overnight drain
+        // and the next morning's recharge are on screen. Shared because the C# projector
+        // must produce exactly the horizon the dashboard grid renders.
+        "BATTERY_CHART_EXTRA_HOURS": 12
     },
 
     // Solar-surplus charge automation thresholds. Used by
@@ -138,6 +144,38 @@ const SHARED_CONFIG = {
         "DRAIN_DEBOUNCE_CYCLES": 2,      // consecutive cycles of "below target AND discharging" before a reactive car stop (rejects a passing cloud)
         "MIN_CAR_KWH": 1,                // a car must be able to take at least this many kWh (headroom below its limit) to be worth starting
         "MIN_SOLAR_KW": 0.1,             // "solar is producing" threshold for allowing a car start (rule: never start with no solar)
+
+        // Opening draw of a home charging session, per car, in kW — what the car
+        // INSISTS on pulling in its first slots even when the sun cannot cover it.
+        // MEASURED over 380 archived home-charging starts (Aug 2025 - Jul 2026):
+        //   * The clock does not matter. Holding the surplus comparable (3-5 kW) and
+        //     splitting by hour gives flat ~2.9-3.9 kW medians across 08:00-16:00 for
+        //     both cars — the apparent time-of-day pattern in the raw numbers is the
+        //     solar surplus in disguise, so there is deliberately no hour term.
+        //   * The draw does not ramp in. Median power at t+0/+15/+30/+45/+60 min is
+        //     flat (Model X 3.50/3.60/3.50/3.37/4.11 kW), so the opening slot already
+        //     IS the session's rate.
+        //   * The car opens at min(what it asks for, what the solar manager allows).
+        //     A request at or below ~21 A is granted in full (0 of 62 starts throttled);
+        //     32 A / 48 A requests are throttled almost always (204 of 242).
+        //   * The throttle tracks the surplus once there IS one (opening amps ÷
+        //     surplus-implied amps ~0.9-1.0 above 2 kW of surplus) but does NOT fall to
+        //     zero with it: with under 1 kW of surplus the cars still opened at a median
+        //     2.49 kW (Model 3, 10 A) and 3.63 kW (Model X, 15 A). THAT is the floor
+        //     that drains the Powerwall on an early-morning start.
+        // Used by ExpectedStartupDrawKw / StartupInsistKw in ChargeAutomationManager.
+        // Controller.cs. Re-measure with the same archive replay if the cars, the wall
+        // connector or Tesla's solar-charging behavior change.
+        "STARTUP_DRAW_KW": {
+            "MODEL_3": 2.5,              // median opening draw with no surplus to follow (~10 A)
+            "MODEL_X": 3.6               // median opening draw with no surplus to follow (~15 A)
+        },
+
+        // Headroom the solar surplus must have OVER the car's insisted-on opening draw
+        // before a start is allowed, covering house load that moves between the decision
+        // and the car actually drawing (mainly the heat pump cycling on: measured
+        // slot-to-slot house-load steps are p90 +0.54 kW, p95 +1.18 kW).
+        "START_SURPLUS_MARGIN_KW": 0.5,
         "USER_LOCK_HOURS": 2,            // after a detected MANUAL car start/stop, the automation won't override it for this long
         "AUTO_SETTLE_MINUTES": 30,       // minimum gap after one automated car action before the opposite one (let rates settle / don't instantly restart)
         "MAX_FAILED_ATTEMPTS_PER_DAY": 3,// give up a repeatedly-failing car command after this many tries in a Pacific day

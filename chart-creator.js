@@ -57,6 +57,65 @@ function mapDayToGrid(dayData) {
     return slots;
 }
 
+// --- Extended battery grid (day + BATTERY_CHART_EXTRA_HOURS) ---------------
+// The Battery Levels chart plots further than one day: slot 0 is the viewed day's
+// midnight and the grid runs BATTERY_CHART_EXTRA_HOURS into the next day, so the
+// overnight drain and the next morning's recharge are on screen. The other day
+// charts stay on the plain 24-hour grid above.
+const BATTERY_GRID_SLOTS = DAY_GRID_SLOTS + Math.round(BATTERY_CHART_EXTRA_HOURS * 60 / DATA_INTERVAL_MINUTES);
+
+// Whole days between a midnight and a later timestamp. Counted from midnights
+// rather than elapsed milliseconds so a 23- or 25-hour DST day still counts as
+// one — every day occupies exactly DAY_GRID_SLOTS slots on the grid.
+function gridDayOffset(gridStart, date) {
+    const midnight = new Date(date);
+    midnight.setHours(0, 0, 0, 0);
+    return Math.round((midnight - gridStart) / 86400000);
+}
+
+// Fractional grid position of a timestamp, given slot 0's midnight (see dayGridIndex)
+function batteryGridIndex(gridStart, date) {
+    return gridDayOffset(gridStart, date) * DAY_GRID_SLOTS + dayGridIndex(date);
+}
+
+// Last moment the grid covers, for slicing a window out of the data
+function batteryGridEnd(gridStart) {
+    const end = new Date(gridStart);
+    end.setDate(end.getDate() + 1);
+    end.setHours(BATTERY_CHART_EXTRA_HOURS, 0, 0, 0);
+    return end;
+}
+
+// One label per slot: the day's clock times, then the next day's marked "+1d"
+// so the two 12:00 AMs can't be confused.
+function buildBatteryGridLabels() {
+    const dayLabels = buildDayGridLabels();
+    const labels = [];
+    for (let i = 0; i < BATTERY_GRID_SLOTS; i++) {
+        const label = dayLabels[i % DAY_GRID_SLOTS];
+        labels.push(i < DAY_GRID_SLOTS ? label : `${label} +1d`);
+    }
+    return labels;
+}
+
+// mapDayToGrid for the extended grid: slot i holds the sample closest to that
+// slot's time, or null where the collector has none.
+function mapRangeToBatteryGrid(rangeData, gridStart) {
+    const slots = new Array(BATTERY_GRID_SLOTS).fill(null);
+    const distance = new Array(BATTERY_GRID_SLOTS).fill(Infinity);
+    (rangeData || []).forEach(point => {
+        const position = batteryGridIndex(gridStart, convertToPDT(point.LocalTimestamp));
+        const slot = Math.round(position);
+        if (slot < 0 || slot >= BATTERY_GRID_SLOTS) return;
+        const offBy = Math.abs(position - slot);
+        if (offBy < distance[slot]) {
+            distance[slot] = offBy;
+            slots[slot] = point;
+        }
+    });
+    return slots;
+}
+
 function createCharts() {
     if (typeof Chart === 'undefined') {
         console.error('Chart.js is not loaded');
@@ -721,7 +780,7 @@ function updateHvacStats(filteredData, dayData) {
     if (statsEl) statsEl.classList.toggle('hvac-offline', !online);
 
     if (!online) {
-        ['hvacMode', 'hvacStatus', 'hvacIndoor', 'hvacHumidity', 'hvacOutdoor', 'hvacHeatSet',
+        ['hvacMode', 'hvacStatus', 'hvacHumidity', 'hvacHeatSet',
             'hvacCoolSet', 'hvacFan', 'hvacHold', 'hvacAirflow', 'hvacFilter', 'hvacCoolingKwh',
             'hvacHpHeatKwh', 'hvacFanKwh', 'hvacEfficiency'].forEach(id => set(id, '--'));
         if (summaryEl) summaryEl.textContent = latest ? 'Offline' : 'No data';
@@ -740,10 +799,7 @@ function updateHvacStats(filteredData, dayData) {
 
     set('hvacMode', mode);
     set('hvacStatus', status);
-    set('hvacIndoor', temp(latest.ThermostatCurrentTempF));
     set('hvacHumidity', num(latest.ThermostatHumidity, '%'));
-    set('hvacOutdoor', temp(latest.ThermostatOutdoorTempF ||
-        (latest.WeatherTemperatureF > -50 ? latest.WeatherTemperatureF : 0)));
     set('hvacHeatSet', temp(latest.ThermostatHeatSetpointF));
     set('hvacCoolSet', temp(latest.ThermostatCoolSetpointF));
 
@@ -894,48 +950,49 @@ function createSolarChart(todayData) {
     if (chartStartMinute === null) chartStartMinute = 0; // 6:00 AM
     if (chartEndMinute === null) chartEndMinute = 14 * 60; // 8:00 PM
 
-    // Forecast solar for the rest of today using the prediction engine's 7-day
-    // median per-slot profile scaled by today's weather (same model as the kWh
-    // header estimate), truncated where the sun goes down.
+    // Forecast solar for the rest of today from the automation plan's published
+    // projection (the C# engine's produced-solar series — no client-side model),
+    // truncated where the sun goes down.
     let predictedPowerAt = null;
     let predictionStartMinute = null;
     let predictionEndMinute = null;
-    if (todayData.length > 0 &&
-        typeof buildDailyProfiles === 'function' && typeof computeSolarScale === 'function') {
-        const profiles = buildDailyProfiles(dataSource, currentTime);
-        const solarScale = computeSolarScale(todayData, profiles.solar, currentTime);
-        const slots = PREDICTION_CONFIG.SLOTS_PER_DAY;
-        const slotMinutes = (24 * 60) / slots;
-
-        // Profile value at a chart minute (minutes since 6am), linearly
-        // interpolated between 15-min slot midpoints so the dots don't step
-        const profilePowerAt = function (minute) {
-            const pos = (minute + 360) / slotMinutes - 0.5;
-            const s0 = Math.min(slots - 1, Math.max(0, Math.floor(pos)));
-            const s1 = Math.min(slots - 1, s0 + 1);
-            const frac = Math.min(1, Math.max(0, pos - s0));
-            return Math.max(0, (profiles.solar[s0] * (1 - frac) + profiles.solar[s1] * frac) * solarScale);
+    const solarPlan = (typeof planSolarForecastToday === 'function') ? planSolarForecastToday() : null;
+    if (todayData.length > 0 && solarPlan && solarPlan.length > 1) {
+        // Plan value at a chart minute (minutes since 6am), linearly interpolated
+        // between the plan's 15-min slots so the dots don't step
+        const planMinutes = solarPlan.map(s => (s.time.getHours() - 6) * 60 + s.time.getMinutes());
+        const planPowerAt = function (minute) {
+            if (minute <= planMinutes[0]) return Math.max(0, solarPlan[0].solarKw);
+            for (let i = 0; i < planMinutes.length - 1; i++) {
+                if (minute <= planMinutes[i + 1]) {
+                    const span = planMinutes[i + 1] - planMinutes[i];
+                    const frac = span > 0 ? (minute - planMinutes[i]) / span : 0;
+                    return Math.max(0, solarPlan[i].solarKw * (1 - frac) + solarPlan[i + 1].solarKw * frac);
+                }
+            }
+            return Math.max(0, solarPlan[solarPlan.length - 1].solarKw);
         };
 
         // Start the forecast at the last measured point (not wall-clock now, which
         // can lag it) and anchor it there: fade the offset between the last measured
-        // power and the profile over the first 45 minutes so the dots continue the
-        // line instead of stepping up or down.
+        // power and the plan over the first 45 minutes so the dots continue the
+        // line instead of stepping up or down. (Presentation smoothing only — the
+        // underlying forecast is the published one.)
         const sortedToday = [...todayData].sort((a, b) => convertToPDT(a.LocalTimestamp) - convertToPDT(b.LocalTimestamp));
         const lastPoint = sortedToday[sortedToday.length - 1];
         const lastDate = convertToPDT(lastPoint.LocalTimestamp);
         predictionStartMinute = (lastDate.getHours() - 6) * 60 + lastDate.getMinutes();
-        const anchorOffset = Math.max(0, lastPoint.SolarPowerKw || 0) - profilePowerAt(predictionStartMinute);
+        const anchorOffset = Math.max(0, lastPoint.SolarPowerKw || 0) - planPowerAt(predictionStartMinute);
         const ANCHOR_FADE_MINUTES = 45;
 
         predictedPowerAt = function (minute) {
             const fade = Math.max(0, 1 - (minute - predictionStartMinute) / ANCHOR_FADE_MINUTES);
-            return Math.max(0, profilePowerAt(minute) + anchorOffset * fade);
+            return Math.max(0, planPowerAt(minute) + anchorOffset * fade);
         };
 
         // Find where predicted production ends (sunset) and truncate there
         for (let minute = predictionStartMinute; minute <= 18 * 60; minute += 5) {
-            if (profilePowerAt(minute) > 0.05) predictionEndMinute = minute;
+            if (planPowerAt(minute) > 0.05) predictionEndMinute = minute;
         }
         if (predictionEndMinute !== null && predictionEndMinute > predictionStartMinute) {
             chartEndMinute = Math.max(chartEndMinute, predictionEndMinute);
@@ -1127,10 +1184,9 @@ function createSolarChart(todayData) {
 }
 
 // Updates the "X kWh so far / ~Y kWh expected" summary in the solar chart header.
-// Produced-so-far integrates today's measured power. The rest-of-day estimate reuses
-// the prediction engine's 7-day median per-slot solar profile, scaled by how today's
-// recent production compares to that profile (so a cloudy or clear day shifts the
-// estimate instead of blindly assuming today matches yesterday).
+// Produced-so-far integrates today's measured power. The rest-of-day estimate reads
+// the automation plan's published solar projection (computed by the C# engine) —
+// no client-side forecasting.
 function updateSolarKwhStats(todayData, dataSource, currentTime) {
     const statsEl = document.getElementById('solarKwhStats');
     if (!statsEl) return;
@@ -1151,21 +1207,11 @@ function updateSolarKwhStats(todayData, dataSource, currentTime) {
     }
 
     let remainingKwh = null;
-    if (typeof buildDailyProfiles === 'function' && typeof computeSolarScale === 'function') {
-        const profiles = buildDailyProfiles(dataSource, currentTime);
-        const solarScale = computeSolarScale(todayData, profiles.solar, currentTime);
-
-        const slotMinutes = (24 * 60) / PREDICTION_CONFIG.SLOTS_PER_DAY;
-        const nowMinutes = currentTime.getHours() * 60 + currentTime.getMinutes() + currentTime.getSeconds() / 60;
-
+    const solarPlanStats = (typeof planSolarForecastToday === 'function') ? planSolarForecastToday() : null;
+    if (solarPlanStats) {
         remainingKwh = 0;
-        for (let s = 0; s < PREDICTION_CONFIG.SLOTS_PER_DAY; s++) {
-            const slotStart = s * slotMinutes;
-            const slotEnd = slotStart + slotMinutes;
-            if (slotEnd <= nowMinutes) continue;
-            // Count only the not-yet-elapsed portion of the current slot
-            const fraction = slotStart < nowMinutes ? (slotEnd - nowMinutes) / slotMinutes : 1;
-            remainingKwh += profiles.solar[s] * solarScale * fraction * (slotMinutes / 60);
+        for (const s of solarPlanStats) {
+            if (s.time > currentTime) remainingKwh += s.solarKw * 0.25; // 15-min slots
         }
     }
 
@@ -1178,6 +1224,103 @@ function updateSolarKwhStats(todayData, dataSource, currentTime) {
     } else {
         statsEl.innerHTML = `<span class="kwh-value">${fmt(producedKwh)} kWh</span> so far`;
     }
+}
+
+// --- Automation decision icons (battery chart) -------------------------------
+// Small badges just above the 0% line: every decision that moved (or will move)
+// electricity — car charge start/stop, heat-pump setpoint steps, charge-limit
+// changes. Executed decisions come from automation-log.json (facts, shown in
+// live AND historical mode); planned ones come from the controller's published
+// automation-plan.json (live mode only) and render faded with a dashed ring.
+const AUTOMATION_ICONS = {
+    START_CAR: { glyph: '▶', label: 'Start car', color: '#39d98a' },
+    STOP_CAR: { glyph: '⏹', label: 'Stop car', color: '#ff8c42' },
+    HVAC_UP: { glyph: '▲', label: 'Heat pump up', color: '#6ab7ff' },
+    HVAC_DOWN: { glyph: '▼', label: 'Heat pump down', color: '#4fd1c5' },
+    HVAC_SET: { glyph: '≈', label: 'Heat pump set', color: '#4fd1c5' },
+    LIMIT_100: { glyph: '⚡', label: 'Charge limit → 100%', color: '#b58cff' },
+    LIMIT_85: { glyph: '⚡', label: 'Charge limit → 85%', color: '#9aa7bd' },
+    STORM: { glyph: '⛈', label: 'Storm mode', color: '#ffcf5c' }
+};
+// Ring color says WHO the action touched, matching the chart's line colors.
+const AUTOMATION_TARGET_COLORS = { Model3: '#ff4444', ModelX: '#4477ff', HeatPump: '#4fd1c5', Cars: '#b58cff' };
+
+// Every automation decision that lands on the chart's grid: executed ones from
+// the log, planned ones from the plan. `now` bounds which side each source may
+// claim (a log entry is always the past; a plan action is always the future).
+function automationChartEvents(gridStart, now) {
+    const events = [];
+    const gridEnd = batteryGridEnd(gridStart);
+
+    for (const e of (window.automationLog || [])) {
+        if (!AUTOMATION_ICONS[e.Action] || !e.TimePacific) continue;
+        const t = parsePlanTime(String(e.TimePacific).slice(0, 16)); // "yyyy-MM-dd HH:mm[:ss]"
+        if (!t || t < gridStart || t >= gridEnd || t > now) continue;
+        events.push({ time: t, action: e.Action, target: e.Target, reason: e.Reason, planned: false });
+    }
+
+    const plan = (typeof automationPlanForNow === 'function') ? automationPlanForNow() : null;
+    if (plan) {
+        const actions = [plan.PredictedStart, plan.PredictedStop].concat(plan.PlannedHvacSteps || []);
+        for (const a of actions) {
+            if (!a || !AUTOMATION_ICONS[a.Action] || !a.TimePacific) continue;
+            const t = parsePlanTime(a.TimePacific);
+            if (!t || t < now || t >= gridEnd) continue;
+            events.push({ time: t, action: a.Action, target: a.Target, reason: a.Reason, planned: true });
+        }
+    }
+    return events;
+}
+
+// Icon badge as a small canvas for Chart.js pointStyle: action glyph inside a
+// ring colored by target; planned actions are faded with a dashed ring.
+const automationIconCache = {};
+function automationIconCanvas(ev) {
+    const key = `${ev.action}|${ev.target}|${ev.planned ? 'planned' : 'done'}`;
+    if (automationIconCache[key]) return automationIconCache[key];
+    const size = 20;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const g = canvas.getContext('2d');
+    const style = AUTOMATION_ICONS[ev.action];
+    const ring = AUTOMATION_TARGET_COLORS[ev.target] || '#9aa7bd';
+
+    g.globalAlpha = ev.planned ? 0.55 : 1;
+    g.beginPath();
+    g.arc(size / 2, size / 2, size / 2 - 1.5, 0, Math.PI * 2);
+    g.fillStyle = 'rgba(10, 14, 22, 0.88)';
+    g.fill();
+    g.lineWidth = 1.5;
+    g.strokeStyle = ring;
+    if (ev.planned) g.setLineDash([3, 2]);
+    g.stroke();
+    g.setLineDash([]);
+
+    g.fillStyle = style.color;
+    g.font = 'bold 10px sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(style.glyph, size / 2, size / 2 + 0.5);
+
+    automationIconCache[key] = canvas;
+    return canvas;
+}
+
+// Tooltip lines for an icon point: what, who, when, done-or-planned, and why.
+function automationIconTooltip(ev) {
+    const style = AUTOMATION_ICONS[ev.action] || { label: ev.action };
+    const when = ev.time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const lines = [`${ev.planned ? 'Planned' : 'Done'}: ${style.label} — ${ev.target} @ ${when}`];
+    // Wrap the reason to keep the tooltip readable
+    const words = String(ev.reason || '').split(' ');
+    let line = '';
+    for (const w of words) {
+        if ((line + ' ' + w).trim().length > 58) { lines.push(line.trim()); line = w; }
+        else line += ' ' + w;
+    }
+    if (line.trim()) lines.push(line.trim());
+    return lines;
 }
 
 // Vertical marker lines where the charge automation is predicted to start or
@@ -1249,7 +1392,10 @@ function houseLoadExcludingCars(point) {
 // So the measured side treats any slot where the Powerwall is full and NOT
 // discharging as "still covered", and the predicted side uses the DELIVERABLE
 // (uncurtailed) solar rather than the curtailed produced line.
-function computeSolarLoadCrossover(todayData, predictions) {
+// `dayEnd` bounds the walk to the viewed day: the forecast now continues past
+// midnight, and tomorrow morning's ramp would otherwise be able to contribute a
+// later surplus->deficit transition than tonight's real crossover.
+function computeSolarLoadCrossover(todayData, predictions, dayEnd) {
     const solar = [];
     const load = [];
     const times = [];
@@ -1276,6 +1422,7 @@ function computeSolarLoadCrossover(todayData, predictions) {
     const predLoad = predictions.houseLoad || [];
     const predTimes = predictions.times || [];
     for (let j = 0; j < predSolar.length; j++) {
+        if (dayEnd && predTimes[j] && predTimes[j] > dayEnd) break;
         solar.push(predSolar[j]);
         load.push(predLoad[j]);
         times.push(predTimes[j] || null);
@@ -1347,6 +1494,27 @@ const solarCrossoverPlugin = {
     }
 };
 
+// Tints the part of the battery chart that belongs to the NEXT day (the slots
+// past midnight — see BATTERY_GRID_SLOTS) so the day boundary reads at a glance.
+// Drawn before the datasets so the lines and forecast dots stay on top.
+const nextDayShadePlugin = {
+    id: 'nextDayShade',
+    beforeDatasetsDraw(chart) {
+        const cfg = chart.options.plugins.nextDayShade;
+        if (!cfg || cfg.startIndex == null) return;
+        const { ctx, chartArea, scales } = chart;
+
+        // Left edge sits on the midnight gridline; the band runs to the axis end
+        const x = Math.max(chartArea.left, Math.min(chartArea.right, scales.x.getPixelForValue(cfg.startIndex)));
+        if (x >= chartArea.right) return;
+
+        ctx.save();
+        ctx.fillStyle = cfg.color || 'rgba(120, 150, 210, 0.12)';
+        ctx.fillRect(x, chartArea.top, chartArea.right - x, chartArea.bottom - chartArea.top);
+        ctx.restore();
+    }
+};
+
 // Remembers the user's show/hide selection per line across chart rebuilds
 // (mode switches and periodic refreshes destroy and recreate the chart).
 // Keyed by a stable identity ("today:Powerwall", "yesterday:Model 3", ...).
@@ -1381,36 +1549,43 @@ function createBatteryChart(todayData) {
         ? window.timeNavigator.getCurrentTime()
         : new Date();
 
-    // Get yesterday's data (relative to the viewed day)
-    const yesterday = new Date(currentTime);
-    yesterday.setDate(yesterday.getDate() - 1);
-    yesterday.setHours(0, 0, 0, 0);
-    const endOfYesterday = new Date(yesterday);
-    endOfYesterday.setHours(23, 59, 59, 999);
-
-    const yesterdayData = sliceDataRange(energyData, yesterday, endOfYesterday);
+    // In Historical mode read from the filtered slice, so the part of the window
+    // that lies after the viewed time stays a forecast instead of leaking the
+    // samples that were collected later.
+    const dataSource = (window.timeNavigator && !window.timeNavigator.isInLiveMode())
+        ? window.timeNavigator.getFilteredData()
+        : energyData;
 
     const todayStart = new Date(currentTime);
     todayStart.setHours(0, 0, 0, 0);
 
-    // Both days (and the forecast) share one midnight-to-midnight axis so they line
-    // up by clock time rather than by array position — see mapDayToGrid.
-    const timeLabels = buildDayGridLabels();
-    const todaySlots = mapDayToGrid(todayData);
-    const yesterdaySlots = mapDayToGrid(yesterdayData);
+    // Yesterday (relative to the viewed day)
+    const yesterday = new Date(todayStart);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    // Both days (and the forecast) share one grid so they line up by clock time
+    // rather than by array position — see mapRangeToBatteryGrid. Each series spans
+    // the full BATTERY_GRID_SLOTS window from its own midnight, so yesterday's
+    // overlay covers the same 24 + BATTERY_CHART_EXTRA_HOURS span shifted back a
+    // day (in Historical mode it reaches only as far as the viewed time).
+    const timeLabels = buildBatteryGridLabels();
+    const todaySlots = mapRangeToBatteryGrid(
+        sliceDataRange(dataSource, todayStart, batteryGridEnd(todayStart)), todayStart);
+    const yesterdaySlots = mapRangeToBatteryGrid(
+        sliceDataRange(dataSource, yesterday, batteryGridEnd(yesterday)), yesterday);
 
     const powerwallPercent = point => point ? (point.BatteryPercentage || 0) : null;
     const powerwallData = todaySlots.map(powerwallPercent);
     const powerwallYesterdayData = yesterdaySlots.map(powerwallPercent);
 
-    // Build a car's series on the day grid, with proper gap handling
+    // Build a car's series on the grid, with proper gap handling
     function createVehicleData(vehiclePrefix, daySlots, dayStart) {
-        const vehicleData = new Array(DAY_GRID_SLOTS).fill(null);
+        const vehicleData = new Array(BATTERY_GRID_SLOTS).fill(null);
         let lastKnownLevel = null;
 
         // Look for the last available data before the day, to establish a starting level
-        for (let i = energyData.length - 1; i >= 0; i--) {
-            const point = energyData[i];
+        for (let i = dataSource.length - 1; i >= 0; i--) {
+            const point = dataSource[i];
             const pointDate = convertToPDT(point.LocalTimestamp);
 
             if (pointDate < dayStart && point[`${vehiclePrefix}IsAvailable`] && point[`${vehiclePrefix}Battery`] != null) {
@@ -1423,7 +1598,7 @@ function createBatteryChart(todayData) {
         // Fill the slots the car actually reported on; the rest stay null (gaps)
         let firstSlotWithData = -1;
         let lastSlotWithData = -1;
-        for (let i = 0; i < DAY_GRID_SLOTS; i++) {
+        for (let i = 0; i < BATTERY_GRID_SLOTS; i++) {
             const point = daySlots[i];
             if (!point) continue;
             if (firstSlotWithData < 0) firstSlotWithData = i;
@@ -1461,16 +1636,17 @@ function createBatteryChart(todayData) {
     const model3Result = createVehicleData('Model3', todaySlots, todayStart);
     const modelXResult = createVehicleData('ModelX', todaySlots, todayStart);
 
-    // Generate predictions for the rest of the day, placed on the grid by the clock
-    // time of each forecast slot (they continue past today's last actual sample).
+    // Generate predictions for the rest of the window, placed on the grid by the
+    // clock time of each forecast slot (they continue past today's last actual
+    // sample, through midnight and on to the end of the grid).
     const predictions = generateBatteryPredictions(todayData);
     const predictionTimes = predictions.times || [];
     function predictionSeries(values) {
-        const series = new Array(DAY_GRID_SLOTS).fill(null);
+        const series = new Array(BATTERY_GRID_SLOTS).fill(null);
         predictionTimes.forEach((time, i) => {
             if (!time || values[i] == null) return;
-            const slot = Math.round(dayGridIndex(time));
-            if (slot >= 0 && slot < DAY_GRID_SLOTS) series[slot] = values[i];
+            const slot = Math.round(batteryGridIndex(todayStart, time));
+            if (slot >= 0 && slot < BATTERY_GRID_SLOTS) series[slot] = values[i];
         });
         return series;
     }
@@ -1650,20 +1826,56 @@ function createBatteryChart(todayData) {
         }
     });
 
-    // Auto start/stop markers removed 2026-07-23: they mirrored the OLD forecast logic
-    // (predetermined stop/start times), but the unified controller is reactive and has no
-    // future times to draw. The "🤖 Automation Log" card is the record of what actually
-    // happened. (The evening solar/load crossover marker below is unaffected.)
-    const markerEvents = [];
+    // Automation decision icons just above the 0% line — executed actions from the
+    // log, planned ones from the published plan — plus vertical marker lines for the
+    // planned car start/stop so the moment reads at a glance.
+    const autoEvents = automationChartEvents(todayStart, currentTime);
+    if (autoEvents.length) {
+        const stackDepth = {};
+        const iconPoints = [];
+        for (const ev of autoEvents.sort((a, b) => a.time - b.time)) {
+            const slot = Math.round(batteryGridIndex(todayStart, ev.time));
+            if (slot < 0 || slot >= BATTERY_GRID_SLOTS) continue;
+            const level = (stackDepth[slot] = (stackDepth[slot] || 0) + 1);
+            iconPoints.push({ x: slot, y: 5 + (level - 1) * 7, ev });
+        }
+        if (iconPoints.length) {
+            datasets.push({
+                label: '🤖 Actions',
+                dayGroup: 'today',
+                data: iconPoints,
+                // Raw {x: gridSlot, y} pairs — without this the category scale ignores
+                // x and strings the icons out by array position from slot 0.
+                parsing: false,
+                showLine: false,
+                pointStyle: iconPoints.map(p => automationIconCanvas(p.ev)),
+                pointRadius: 8,
+                pointHoverRadius: 9,
+                hitRadius: 4,
+                borderColor: '#9aa7bd',
+                backgroundColor: 'rgba(154, 167, 189, 0.4)'
+            });
+        }
+    }
+
+    // Vertical marker lines for the PLANNED car commands (the icons mark the spot;
+    // the line makes the time readable against the curves).
+    const markerEvents = (predictions.events || []).map(ev => ({
+        chartIndex: batteryGridIndex(todayStart, ev.time),
+        color: ev.type === 'start' ? '#39d98a' : '#ff8c42',
+        label: `${ev.type === 'start' ? '▶' : '⏹'} ${ev.car === 'Model3' ? 'Model 3' : 'Model X'} ~${ev.time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+    }));
 
     // Evening solar/house-load crossover marker (see computeSolarLoadCrossover).
     // It walks the day in sample order, so re-anchor it to the grid by its clock time.
-    const crossover = computeSolarLoadCrossover(todayData, predictions);
-    if (crossover) crossover.chartIndex = dayGridIndex(crossover.time);
+    const endOfViewedDay = new Date(todayStart);
+    endOfViewedDay.setHours(23, 59, 59, 999);
+    const crossover = computeSolarLoadCrossover(todayData, predictions, endOfViewedDay);
+    if (crossover) crossover.chartIndex = batteryGridIndex(todayStart, crossover.time);
 
     batteryChart = new Chart(ctx, {
         type: 'line',
-        plugins: [autoChargeMarkersPlugin, solarCrossoverPlugin],
+        plugins: [nextDayShadePlugin, autoChargeMarkersPlugin, solarCrossoverPlugin],
         data: {
             labels: timeLabels,
             datasets: datasets
@@ -1673,11 +1885,25 @@ function createBatteryChart(todayData) {
             maintainAspectRatio: false,
             animation: chartAnimation(),
             plugins: {
+                nextDayShade: {
+                    startIndex: DAY_GRID_SLOTS
+                },
                 autoChargeMarkers: {
                     events: markerEvents
                 },
                 solarCrossover: {
                     marker: crossover
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function (context) {
+                            // Automation icons carry their event; everything else keeps
+                            // the default "Label: value" text.
+                            if (context.raw && context.raw.ev) return automationIconTooltip(context.raw.ev);
+                            const name = context.dataset.label;
+                            return (name ? name + ': ' : '') + context.formattedValue;
+                        }
+                    }
                 },
                 legend: {
                     labels: {
@@ -1712,7 +1938,11 @@ function createBatteryChart(todayData) {
                         maxTicksLimit: 12
                     },
                     grid: {
-                        color: 'rgba(255, 255, 255, 0.1)'
+                        // Brighter line at midnight so the next day's 12 hours read
+                        // as a separate day rather than more of today
+                        color: c => (c.tick && c.tick.value === DAY_GRID_SLOTS)
+                            ? 'rgba(255, 255, 255, 0.35)'
+                            : 'rgba(255, 255, 255, 0.1)'
                     }
                 },
                 y: {

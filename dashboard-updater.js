@@ -46,19 +46,22 @@ async function fetchDailySummary() {
     }
 }
 
-// Fetch the charge automation's persisted state (per-car cooldowns and failed
-// command attempts) so the battery chart can warn when the automation needed to
-// stop a charge but couldn't. Never throws: the warning simply stays silent on
-// the blocked-automation cases when the blob is unavailable.
-async function fetchChargeAutomationState() {
+// Fetch the unified controller's published plan — its projection of the day (forecast
+// series) and of its own upcoming actions. The dashboard RENDERS this; it does not
+// recompute anything (there is exactly one implementation of the forecast and the rules,
+// in C#, so the charts cannot disagree with the automation). Never throws: without the
+// blob the charts simply show measured data with no forecast or markers.
+// (The old charge-automation-state.json fetch is gone with the JS decision layer — that
+// blob has been frozen since the unified controller replaced the legacy automation.)
+async function fetchAutomationPlan() {
     try {
-        const response = await fetch(`${CHARGE_AUTOMATION_STATE_URL}?t=${Date.now()}`);
+        const response = await fetch(`${AUTOMATION_PLAN_URL}?t=${Date.now()}`, { cache: 'no-store' });
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
         return await response.json();
     } catch (error) {
-        console.warn('Charge automation state unavailable (automation warnings limited):', error.message);
+        console.warn('Automation plan unavailable (chart shows no start/stop markers):', error.message);
         return null;
     }
 }
@@ -67,13 +70,12 @@ async function loadEnergyData() {
     try {
         console.log('Loading energy data from:', AZURE_BLOB_URL);
 
-        const [data, summary, automationState] = await Promise.all([
-            fetchEnergyData(), fetchDailySummary(), fetchChargeAutomationState()]);
+        const [data, summary, automationPlan] = await Promise.all([
+            fetchEnergyData(), fetchDailySummary(), fetchAutomationPlan()]);
         dailySummaryData = summary;
-        // Keep the last good automation state on a transient fetch failure so a
-        // critical "stop the charge manually" banner doesn't flap off for a full
-        // refresh cycle (the fetch races the collector's 15-min blob upload)
-        if (automationState) window.chargeAutomationState = automationState;
+        // Keep the last good plan on a transient fetch failure so the forecast
+        // doesn't blink off for a cycle (the fetch races the collector's upload)
+        if (automationPlan) window.automationPlan = automationPlan;
 
         energyData = data.sort((a, b) => convertToPDT(a.LocalTimestamp) - convertToPDT(b.LocalTimestamp));
 
@@ -139,7 +141,7 @@ async function loadEnergyData() {
 // Null-safe text setter. updateDashboard() runs BEFORE the dashboard is revealed,
 // so a single missing element must never throw and abort the whole render — that
 // leaves the page blank (loading hidden, dashboard still hidden): the "black
-// screen" seen when a browser is still holding a cached Index.html that predates
+// screen" seen when a browser is still holding a cached index.html that predates
 // a newly deployed field (e.g. #powerwallStatus). Skip the missing one instead.
 function setFieldText(id, value) {
     const el = document.getElementById(id);
