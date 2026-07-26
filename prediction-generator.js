@@ -88,8 +88,9 @@ function generateBatteryPredictions(todayData) {
  * The published plan, when it applies to what the dashboard is showing right now:
  * live mode (a plan is the automation's intent FROM NOW — there is no valid plan
  * for a time-navigated past moment) and generated today (a plan from yesterday
- * describes a day that no longer exists). Kill-switch plans still carry a
- * projection and render; their planned actions are empty by construction.
+ * describes a day that no longer exists). Kill-switch plans carry the projection
+ * AND the actions the rules WOULD take (AutomationEnabled=false — the icons render
+ * with a "Would (automation off)" tooltip, since nothing will be commanded).
  */
 function automationPlanForNow() {
     const plan = window.automationPlan;

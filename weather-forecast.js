@@ -59,13 +59,6 @@ function forecastEmoji(shortForecast, isDaytime) {
     return isDaytime ? '🌤️' : '🌙';
 }
 
-function solarBarColor(pct) {
-    if (pct >= 80) return '#00cc00';
-    if (pct >= 55) return '#ffd700';
-    if (pct >= 30) return '#ff8c00';
-    return '#ff4444';
-}
-
 async function fetchOpenMeteoDays() {
     const daily = [
         'weather_code', 'temperature_2m_max', 'temperature_2m_min',
@@ -93,7 +86,10 @@ async function fetchOpenMeteoDays() {
         const solarPct = (sunshine !== null && daylight) ?
             Math.max(0, Math.min(100, Math.round(100 * sunshine / daylight))) : null;
         const radiation = d.shortwave_radiation_sum ? d.shortwave_radiation_sum[i] : null;
-        const solarKwh = radiation !== null ? (radiation / 3.6).toFixed(1) : null; // MJ/m² -> kWh/m²
+        // What THIS array is expected to make that day, not the raw irradiance. The
+        // per-month factor is calibrated against collector history — see
+        // shared-config.js SOLAR_KWH_PER_MJ_BY_MONTH and docs/solar-calibration.md.
+        const predictedKwh = radiation !== null ? predictedSolarKwh(m, radiation) : null;
         const precipProb = d.precipitation_probability_max ? d.precipitation_probability_max[i] : null;
 
         let [desc, icon] = WMO_CODES[code] || ['Unknown', '🌤️'];
@@ -118,7 +114,7 @@ async function fetchOpenMeteoDays() {
             desc,
             modelNote,
             solarPct,
-            solarKwh,
+            predictedKwh,
             precipProb,
             severity: STORM_CODES.has(code) ? 'storm' : (RAIN_CODES.has(code) || precipProb >= 50 ? 'rain' : null),
             extended: i >= 7
@@ -146,7 +142,7 @@ async function fetchNwsDays() {
                 icon: forecastEmoji(period.shortForecast, true),
                 desc: period.shortForecast,
                 solarPct: null,
-                solarKwh: null,
+                predictedKwh: null,
                 precipProb,
                 severity: /thunder/i.test(period.shortForecast) ? 'storm' :
                     (/rain|shower|snow|drizzle/i.test(period.shortForecast) ? 'rain' : null),
@@ -164,7 +160,7 @@ async function fetchNwsDays() {
                 icon: forecastEmoji(period.shortForecast, false),
                 desc: period.shortForecast,
                 solarPct: null,
-                solarKwh: null,
+                predictedKwh: null,
                 precipProb,
                 severity: null,
                 extended: false
@@ -188,6 +184,25 @@ function tempBarColor(high) {
     if (high >= 90) return '#ff8c00';
     if (high >= 80) return '#ffd700';
     return '#87ceeb';
+}
+
+// Forecast radiation (MJ/m²) -> kWh this array is expected to produce, using the
+// calibrated per-month factor from shared-config.js (index 0 = January). The C# rule
+// does the same arithmetic in SharedConfig.PredictedSolarKwh — keep the two in step.
+const SOLAR_KWH_PER_MJ_FALLBACK = 2.3476;   // annual mean, used only if the table is missing
+function predictedSolarKwh(month, radiationMj) {
+    const table = (typeof SHARED_CONFIG !== 'undefined' && SHARED_CONFIG.UNIFIED_CONTROLLER)
+        ? SHARED_CONFIG.UNIFIED_CONTROLLER.SOLAR_KWH_PER_MJ_BY_MONTH : null;
+    const k = (Array.isArray(table) && table[month - 1] > 0)
+        ? table[month - 1] : SOLAR_KWH_PER_MJ_FALLBACK;
+    return k * radiationMj;
+}
+
+// kWh below which the controller pre-charges both cars to 100%; drawn on the chart so
+// it is obvious at a glance which days would trigger.
+function stormKwhThreshold() {
+    const uc = (typeof SHARED_CONFIG !== 'undefined') ? SHARED_CONFIG.UNIFIED_CONTROLLER : null;
+    return (uc && uc.STORM_SOLAR_KWH_THRESHOLD > 0) ? uc.STORM_SOLAR_KWH_THRESHOLD : null;
 }
 
 function extraTooltipLines(day) {
@@ -224,8 +239,43 @@ function forecastXScale(days) {
     };
 }
 
+// Draws a dashed horizontal rule at the storm pre-charge threshold, so it is visible
+// which days fall under it. Reads its value from options.plugins.thresholdLine.value.
+const thresholdLinePlugin = {
+    id: 'thresholdLine',
+    afterDatasetsDraw(chart, args, opts) {
+        const value = opts && opts.value;
+        if (!(value > 0)) return;
+        const y = chart.scales.y.getPixelForValue(value);
+        if (!isFinite(y)) return;
+        const { left, right } = chart.chartArea;
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.beginPath();
+        ctx.setLineDash([5, 4]);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = 'rgba(255, 120, 60, 0.9)';   // needs to read over the yellow bars
+        ctx.moveTo(left, y);
+        ctx.lineTo(right, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // The bars usually reach past this line, so the label needs its own backdrop
+        // or it disappears into them.
+        const label = `${value} kWh — pre-charge below`;
+        ctx.font = '10px sans-serif';
+        const w = ctx.measureText(label).width;
+        ctx.fillStyle = 'rgba(20, 20, 20, 0.82)';
+        ctx.fillRect(right - w - 10, y - 13, w + 8, 13);
+        ctx.fillStyle = 'rgba(255, 140, 90, 0.95)';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(label, right - 6, y - 2);
+        ctx.restore();
+    }
+};
+
 // Two stacked charts, one column per day (same style as the daily production
-// charts): temperature as floating low→high bars, solar potential below it.
+// charts): temperature as floating low→high bars, predicted production below it.
 function renderForecast(container, days) {
     container.innerHTML = `
         <div class="forecast-charts-row">
@@ -234,7 +284,7 @@ function renderForecast(container, days) {
                 <div class="forecast-chart-wrapper"><canvas id="weatherTempChart"></canvas></div>
             </div>
             <div class="forecast-chart-col" id="weatherSolarChartCol">
-                <div class="forecast-chart-title">☀️ Solar Potential (% of daylight with sunshine)</div>
+                <div class="forecast-chart-title">☀️ Predicted Solar Production (kWh)</div>
                 <div class="forecast-chart-wrapper"><canvas id="weatherSolarChart"></canvas></div>
             </div>
         </div>`;
@@ -294,19 +344,26 @@ function renderForecast(container, days) {
         weatherSolarChartObj.destroy();
         weatherSolarChartObj = null;
     }
-    if (days.every(d => d.solarPct === null)) {
-        // NWS fallback has no sunshine data — hide the solar chart column
+    if (days.every(d => d.predictedKwh == null)) {
+        // NWS fallback has no radiation data, so there is nothing to convert to kWh —
+        // hide the column rather than draw an empty axis
         document.getElementById('weatherSolarChartCol').style.display = 'none';
         return;
     }
+    // Bars are all one colour now (the solar yellow used by the production charts) —
+    // "how good a solar day is this" is carried by bar HEIGHT in kWh, which is the honest
+    // encoding. It used to be carried by a green/amber/red colour ramp on sunshine %.
+    const threshold = stormKwhThreshold();
+    const maxKwh = Math.max(...days.map(d => d.predictedKwh || 0), threshold || 0);
+
     weatherSolarChartObj = new Chart(document.getElementById('weatherSolarChart').getContext('2d'), {
         type: 'bar',
         data: {
             labels: labels,
             datasets: [{
-                data: days.map(d => d.solarPct),
-                backgroundColor: days.map(d => hexToRgba(solarBarColor(d.solarPct !== null ? d.solarPct : 0), 0.7)),
-                borderColor: days.map(d => solarBarColor(d.solarPct !== null ? d.solarPct : 0)),
+                data: days.map(d => d.predictedKwh),
+                backgroundColor: 'rgba(255, 204, 0, 0.7)',
+                borderColor: '#ffcc00',
                 borderWidth: 1,
                 borderRadius: 4
             }]
@@ -319,26 +376,38 @@ function renderForecast(container, days) {
                 tooltip: {
                     callbacks: {
                         title: tooltipTitle(days),
-                        label: item => `Solar potential: ${days[item.dataIndex].solarPct}% of daylight`,
+                        label: item => {
+                            const d = days[item.dataIndex];
+                            return d.predictedKwh !== null
+                                ? `Predicted: ${d.predictedKwh.toFixed(1)} kWh`
+                                : 'Predicted: --';
+                        },
                         afterLabel: item => {
                             const d = days[item.dataIndex];
                             const lines = extraTooltipLines(d);
-                            if (d.solarKwh !== null) lines.unshift(`Expected solar energy: ~${d.solarKwh} kWh/m²`);
+                            if (threshold !== null && d.predictedKwh !== null && d.predictedKwh < threshold)
+                                lines.unshift(`⚡ Below ${threshold} kWh — cars would pre-charge to 100%`);
+                            if (d.solarPct !== null) lines.unshift(`${d.solarPct}% of daylight with sunshine`);
                             return lines.join('\n');
                         }
                     }
-                }
+                },
+                // Faint line at the pre-charge threshold. Drawn as a plugin rather than a
+                // dataset: on a category axis an extra line dataset needs `parsing: false`
+                // or it silently fails to render, and this avoids the trap entirely.
+                thresholdLine: { value: threshold }
             },
             scales: {
                 x: forecastXScale(days),
                 y: {
                     min: 0,
-                    max: 100,
-                    ticks: { color: '#888', callback: value => value + '%' },
+                    suggestedMax: Math.ceil((maxKwh * 1.1) / 10) * 10,
+                    ticks: { color: '#888', callback: value => value + ' kWh' },
                     grid: { color: 'rgba(255, 255, 255, 0.1)' }
                 }
             }
-        }
+        },
+        plugins: [thresholdLinePlugin]
     });
 }
 

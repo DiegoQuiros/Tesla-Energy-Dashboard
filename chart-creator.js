@@ -1238,8 +1238,8 @@ function updateSolarKwhStats(todayData, dataSource, currentTime) {
 // heat-pump rungs, tomorrow morning's co-charging start, the lot. It also carries
 // INFORMATIONAL entries for things that visibly happen on the chart without the
 // automation commanding them (a session tapering out when the surplus dies, a car
-// reaching its charge limit, the weekday routine) — those get a dotted ring and an
-// "Expected" tooltip so a prediction is never mistaken for a decision.
+// reaching its charge limit) — those get a dotted ring and an "Expected" tooltip so
+// a prediction is never mistaken for a decision.
 const AUTOMATION_ICONS = {
     START_CAR: { glyph: '▶', label: 'Start car', color: '#39d98a' },
     STOP_CAR: { glyph: '⏹', label: 'Stop car', color: '#ff8c42' },
@@ -1251,8 +1251,7 @@ const AUTOMATION_ICONS = {
     STORM: { glyph: '⛈', label: 'Storm mode', color: '#ffcf5c' },
     // Not commands — consequences the chart should still explain (Informational)
     CAR_TAPERS: { glyph: '~', label: 'Charge tapers out (surplus gone)', color: '#c9d3e3' },
-    CAR_FULL: { glyph: '✓', label: 'Car reaches its charge limit', color: '#c9d3e3' },
-    CAR_ROUTINE: { glyph: '↗', label: 'Weekday routine (car leaves)', color: '#c9d3e3' }
+    CAR_FULL: { glyph: '✓', label: 'Car reaches its charge limit', color: '#c9d3e3' }
 };
 // Ring color says WHO the action touched, matching the chart's line colors.
 const AUTOMATION_TARGET_COLORS = { Model3: '#ff4444', ModelX: '#4477ff', HeatPump: '#4fd1c5', Cars: '#b58cff' };
@@ -1278,13 +1277,16 @@ function automationChartEvents(gridStart, now) {
         const actions = Array.isArray(plan.PlannedActions)
             ? plan.PlannedActions
             : [plan.PredictedStart, plan.PredictedStop].concat(plan.PlannedHvacSteps || []);
+        // Kill-switch on => the plan's actions are what the rules WOULD do (nothing
+        // will be commanded); the tooltip says so instead of promising "Planned".
+        const wouldOnly = plan.AutomationEnabled === false;
         for (const a of actions) {
             if (!a || !AUTOMATION_ICONS[a.Action] || !a.TimePacific) continue;
             const t = parsePlanTime(a.TimePacific);
             if (!t || t < now || t >= gridEnd) continue;
             events.push({
                 time: t, action: a.Action, target: a.Target, reason: a.Reason,
-                planned: true, informational: !!a.Informational
+                planned: true, informational: !!a.Informational, wouldOnly
             });
         }
     }
@@ -1333,7 +1335,9 @@ function automationIconCanvas(ev) {
 function automationIconTooltip(ev) {
     const style = AUTOMATION_ICONS[ev.action] || { label: ev.action };
     const when = ev.time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    const state = ev.informational ? 'Expected' : ev.planned ? 'Planned' : 'Done';
+    const state = ev.informational ? 'Expected'
+        : !ev.planned ? 'Done'
+        : ev.wouldOnly ? 'Would (automation off)' : 'Planned';
     const lines = [`${state}: ${style.label} — ${ev.target} @ ${when}`];
     // Wrap the reason to keep the tooltip readable
     const words = String(ev.reason || '').split(' ');

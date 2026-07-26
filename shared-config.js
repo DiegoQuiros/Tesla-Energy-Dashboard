@@ -118,14 +118,68 @@ const SHARED_CONFIG = {
         "NIGHT_HVAC_MIN_SOC_PERCENT": 5,             // keep the overnight forecast LOW at/above this
         "NIGHT_HVAC_FORECAST_HORIZON_HOUR": 14,      // cap the overnight forecast at 2 PM next day (backstop when 100% is never reached)
 
-        // Setpoint -> load sensitivity for the overnight forecast, so the dynamic
-        // start-of-night setpoint search AND the hourly step-ups can estimate how much
-        // house load each +1 °F above the 78 °F baseline sheds (without it, "model again
-        // one degree higher" would return the same LOW and the search would be moot).
-        // ROUGH first-order model — calibrate against collected HVAC-vs-load data. Biased
-        // conservative: a LOWER kW/°F makes the model credit each degree with less saving,
-        // so the search lands on a HIGHER (safer) starting setpoint.
-        "NIGHT_HVAC_KW_SAVED_PER_DEGREE": 0.3,       // house-load kW shed per °F above the 78 °F baseline
+        // Setpoint/weather -> load sensitivity for OVERNIGHT projections: the house load
+        // a +1 °F cool-setpoint raise sheds, and equally the load an extra °F of outdoor
+        // warmth adds (they are the same coefficient — cooling load tracks the difference
+        // between them). Applies while cooling can actually run; once the outdoor
+        // temperature sits COOLING_GATE_F below the setpoint the heat pump is idle and a
+        // degree buys nothing, so the sensitivity is zero.
+        //
+        // MEASURED 2026-07-25, and it is SMALL — this is the whole-night sustained rate,
+        // not the instantaneous one. Three routes agree:
+        //   * 51 clean cooling-season nights: pack drop vs mean outdoor temperature =
+        //     0.57 ±0.31 pp of pack per °F over a ~9 h night  ->  ~0.015 kW/°F.
+        //   * 118-night backtest of the overnight-low estimator, sweeping this constant:
+        //     the error minimum is flat from 0.010 to 0.016 (MAE 6.05 pp vs 6.12 raw);
+        //     the cooling-season subset optimises at 0.021.
+        //   * physics: the clip-model conductance (0.07–0.09 kW/°F instantaneous) times the
+        //     measured overnight compressor duty cycle (~25 %) ≈ 0.02 kW/°F.
+        //
+        // WHY IT IS FLAT rather than graded by hour: the graded form was tested (weighting
+        // each slot by an activity curve, so 1 AM counted more than 5 AM) and it was WORSE
+        // than raw at every scale, while flat-with-gate was the only form that beat raw.
+        // Over a whole night the envelope integrates; the hours do not separate. A degree
+        // IS worth much more instantaneously in the afternoon (0.71 ±0.12 kW/°F measured
+        // 10:00–20:00) — do NOT use this constant for a daytime decision.
+        //
+        // CONSEQUENCE worth knowing: at 0.015 kW/°F a degree moves the overnight low by
+        // only ~0.9 pp, so the 78→82 °F ladder can shift it ~3.6 pp total. The overnight
+        // heat-pump rule cannot rescue a night that is 10 pp short.
+        //
+        // Supersedes the fixed 0.3-guess NIGHT_HVAC_KW_SAVED_PER_DEGREE and the
+        // activity-curve HVAC_RUN_KW_PER_F/OFFSET/RAMP/SOLAR_GAIN that briefly replaced it:
+        // that curve was calibrated on the DAYTIME plateau and overstated a night ~20x,
+        // which made the overnight-low estimator swing by 20+ pp on a 1 °F difference.
+        // Re-fit with scratchpad/backtest_correction.py as more nights accumulate; summer
+        // and cool mode only.
+        "HVAC_OVERNIGHT_KW_PER_F": 0.015,  // sustained kW of house load per °F of cool setpoint (or of outdoor temp)
+        "HVAC_COOLING_GATE_F": 10,         // outdoor this far below the setpoint => heat pump idle => zero sensitivity
+
+        // ── Overnight-low estimator + 10 PM night anchor (2026-07-25) ──
+        // Diego's yesterday-delta method widened to N prior nights, and a one-shot
+        // "set it at 10 PM and forget it" setpoint decision. Chosen by an exhaustive
+        // predictor search over 326 archived nights (aggregates, quantiles, walk-forward
+        // ridge/OLS + conformal margins, k-NN analog nights — every family backtested
+        // walk-forward, the winner adversarially re-computed):
+        //   * median of the last up-to-5 clean prior nights beats last-night-only
+        //     (summer MAE ~5.5 vs 6.5 pp) and nothing fancier reliably beats the median —
+        //     regression won only by anti-conservative bias on an easier window (audit
+        //     rejected it); analog nights lose to plain recency.
+        //   * for the DECISION the p90 of those nights' drops ("assume a bad recent
+        //     night") sits on the missed/false-alarm Pareto knee: over 73 summer nights,
+        //     missed 2 / false-alarm 1 / set-and-forget 69.9% / mean discomfort 0.8 °F.
+        //   * forensics: failures are decided BEFORE 10 PM — the median failed night
+        //     arrives ~16 pp short vs the 2.7 pp total lever; a perfect oracle prevents
+        //     only ~2-3 of 28 summer failures. The setpoint is margin insurance for
+        //     near-miss nights (lows 5-10%), not a rescue tool, so the anchor also
+        //     FLAGS doomed nights honestly instead of pretending 82 °F saves them.
+        // A prior night is used only if it was CLEAN: fully measured, anchor sample
+        // present, pack never floored (< 2%), no EV home-charging and no grid import
+        // before its low (those pollute or truncate the measured drop).
+        "NIGHT_PRIOR_NIGHTS": 5,           // how many clean prior nights the estimator aggregates
+        "NIGHT_PRIOR_LOOKBACK_DAYS": 10,   // how far back it may look for them
+        "NIGHT_CONSERVATIVE_PCTL": 90,     // decision percentile of the prior-night drops (90 = near-worst)
+        "NIGHT_ANCHOR_SETPOINT_F": 79,     // the 10 PM starting setpoint on a normal night (Diego: "cool enough and not too hot")
         "NIGHT_HVAC_MIN_HOUSE_LOAD_KW": 0.3          // non-HVAC overnight floor the modeled load can't drop below
     },
 
@@ -181,6 +235,61 @@ const SHARED_CONFIG = {
         "MAX_FAILED_ATTEMPTS_PER_DAY": 3,// give up a repeatedly-failing car command after this many tries in a Pacific day
         "LOG_MAX_ENTRIES": 1000,         // cap the automation-log.json ring buffer at this many newest entries
 
+        // ── Curtailment banking: PROPORTIONAL sizing (2026-07-26) ──────────────────
+        // Replaces the old "curtailment => jump straight to COMFORT_MIN_F, then snap back
+        // to COMFORT_BASE_F" pair, which flapped: the down move was gated on three
+        // conditions and the up move on only one, so any single sample losing the
+        // justification handed control to the up rule.
+        //
+        // VERIFIED by a CLOSED-LOOP replay of the shipped C# (called by reflection out of the
+        // built assembly, with each decision's own cooling written back onto the load and off
+        // the export before the next one reads it) over 178 archived cooling days:
+        // 386 writes (2.17/day), 105 banking episodes holding a median 120 min, 277 kWh of
+        // otherwise-exported solar recaptured against 28 kWh taken from the pack. For scale,
+        // the old rule managed 3 kWh/yr and flapped on every one of its 6 firing days; merely
+        // lifting its `charging &&` gate gives 583 writes and 82 flapping days.
+        //
+        // The rule: convert the solar that has nowhere to go into whole degrees at
+        // BANK_KW_PER_F, hold BANK_RESERVE_KW back, and move that many degrees. Leaving
+        // some waste deliberately unused is what makes it stick — the justification is
+        // still true on the next cycle, so nothing unwinds it.
+        //
+        // "Solar with nowhere to go" is measured as grid EXPORT plus any remaining pack
+        // charge headroom, NOT solar - load. Over the 1,789 archived slots this rule
+        // fires in, the pack is full and NOT charging (median BatteryPowerKw 0.00) while
+        // the house exports a median 3.76 kW; 95% of those slots can absorb a full
+        // degree, 81% two. Because export already nets out our own cooling, the signal is
+        // self-correcting — but it must be normalised back to COMFORT_BASE_F (add our own
+        // cooling back in) or the rule measures its own output and ratchets.
+        //
+        // Consequence measured in the same backtest: extra cooling during curtailment is
+        // almost entirely paid for by export, not by the pack (277 kWh recaptured vs 28 kWh
+        // of pack draw). Cost is comfort: ~1.4 h/cooling day at 76-77 F.
+        //
+        // NO DWELL TIMER, on purpose. A 45-min one was implemented and then removed: it cost
+        // 17 kWh of recaptured solar and ADDED 20 kWh of pack drain, because it held the bank
+        // open after the export had already died. The "3-4 writes in an hour" it was
+        // suppressing are the ladder walking 78->77->76 in two consecutive cycles plus real
+        // cloud transitions — NOT rules fighting. The distinction that matters: across all 65
+        // reversals inside an hour, the SMALLEST waste-signal swing between them is 1.52 kW
+        // against a 1.06 kW hysteresis band, so every reversal follows a genuine change in
+        // conditions. The old flap reversed with nothing changing at all. Diego's call
+        // (2026-07-26): 15-minute adjustments are fine, responsiveness is worth more.
+        // Do NOT "fix" writes-per-hour by re-adding a clock — measure reversals-without-cause.
+        //
+        // Sweeps that FAILED, so don't retry them: hysteresis 0.35 -> 1.00 barely moves
+        // anything and 1.42 breaks the rule outright (it can never release: 267 kWh of pack
+        // drain, 3.6 h/day of cooling); wider smoothing is actively worse (7 samples doubles
+        // the busy hours, because a lagging median keeps the cool-down signal alive after the
+        // export has gone); requiring 2-3 consecutive confirmations before cooling costs
+        // 33 kWh of capture and fixes nothing.
+        "BANK_KW_PER_F": 0.71,           // house kW added per °F of cooling, MEASURED 10:00-20:00 (±0.12) — the DAYTIME instantaneous rate, NOT HVAC_OVERNIGHT_KW_PER_F
+        "BANK_RESERVE_KW": 0.4,          // waste left deliberately unused so the trigger survives the action (0.4 beat 1.0 on recapture, both equally stable)
+        "BANK_HYSTERESIS_KW": 0.35,      // half a degree of slack around each degree boundary, so a noisy sample can't cross back — this, not a dwell timer, is what keeps the rule stable
+        "BANK_ENTER_PERCENT": 99,        // engage banking at/above this pack % ...
+        "BANK_EXIT_PERCENT": 97,         // ... and stay engaged until it falls below this (the pack crosses 99 between consecutive samples 16% of the time)
+        "BANK_SMOOTH_SAMPLES": 3,        // median over this many samples (45 min) of the waste signal — clouds and the fridge move it by more than a degree's worth; do NOT widen (see above)
+
         // Storm / reduced-solar pre-charge: raise BOTH cars' charge limit to 100% when a
         // solar shortfall is coming (grid-avoidance beats battery-degradation), back to 85%
         // as soon as the forecast is clear. Uses Open-Meteo daily shortwave radiation.
@@ -191,6 +300,26 @@ const SHARED_CONFIG = {
         "NORMAL_CHARGE_LIMIT": 85,       // everyday car charge-limit ceiling
         "STORM_CHARGE_LIMIT": 100,       // pre-charge ceiling when a shortfall is coming
         "STORM_LOOKAHEAD_DAYS": 3,       // scan this many upcoming days for a shortfall
-        "STORM_SOLAR_MJ_THRESHOLD": 16   // a day whose shortwave_radiation_sum (MJ/m²) is below this counts as a poor-solar day (a clear summer day here is ~28-30; CALIBRATE)
+
+        // Forecast radiation -> predicted production. Open-Meteo gives a daily
+        // shortwave_radiation_sum in MJ/m²; multiplying by the month's factor gives the
+        // kWh this array would make that day. CALIBRATED 2026-07-26 against 329 days of
+        // collector history — see docs/solar-calibration.md for the method and for how to
+        // redo this when more data has accumulated. Index 0 = January.
+        //
+        // High in winter, low in summer: a tilted array collects proportionally more than
+        // a horizontal radiation sensor when the sun is low, and panels lose efficiency as
+        // they get hot. Do NOT flatten these into one number — that was the old bug.
+        "SOLAR_KWH_PER_MJ_BY_MONTH": [
+            2.6351, 2.4800, 2.3500, 2.4351, 2.0496, 2.0723,
+            2.0342, 2.1738, 2.3133, 2.5076, 2.3978, 2.4280
+        ],
+
+        // Predicted production below this many kWh makes it a shortfall day. 30 was the
+        // best precision/recall balance over 320 day/night pairs against "did we import
+        // more than 2 kWh overnight" (fires 17% of days, almost all Nov-Feb). Raising it
+        // to 35 makes it fire EVERY day in December, i.e. it stops being a forecast and
+        // becomes a calendar — don't.
+        "STORM_SOLAR_KWH_THRESHOLD": 30
     }
 };
