@@ -59,63 +59,19 @@ const SHARED_CONFIG = {
         "BATTERY_CHART_EXTRA_HOURS": 12
     },
 
-    // Solar-surplus charge automation thresholds. Used by
-    // ChargeAutomationManager.cs to decide the start/stop commands, and by
-    // prediction-generator.js to mirror those decisions in the "Battery
-    // Levels Today" forecast so the chart shows what the automation will do.
+    // Overnight forecast settings for the unified controller's night anchor
+    // (ChargeAutomationManager.PredictPowerwallOvernight and the 10 PM anchor in
+    // ChargeAutomationManager.Controller.cs). Collector-side only — nothing in the
+    // dashboard reads this block. The comfort ladder itself (COMFORT_MIN/BASE/MAX_F,
+    // OVERNIGHT_FLOOR/RECOVER_PERCENT) lives in UNIFIED_CONTROLLER below; the old
+    // start/stop trigger thresholds that used to live here went out with the legacy
+    // routines they fed.
     "CHARGE_AUTOMATION": {
-        "HIGH_POWERWALL_CHARGE_KW": 4.8,       // Powerwall absorbing (nearly) all it can -> solar about to be wasted
-        "LOW_POWERWALL_CHARGE_KW": 1.5,        // lower trigger bar when the Powerwall is nearly full
-        "NEARLY_FULL_PERCENT": 95,             // "nearly full" for the low trigger bar
-        "MIN_SOLAR_HOURS_LEFT": 3.0,           // don't start a charge without this much useful solar left
-        "STOP_MIN_IMPROVEMENT_PERCENT": 2.0,   // don't interrupt a charge for less predicted Powerwall gain than this
-        "STOP_NEAR_FULL_PERCENT": 97,          // near-full tier for the stop decision. The stop side protects a true 100% only when it is actually reachable (stop-now forecast hits it); otherwise the pack ends essentially full regardless, so it protects only this level and lets the car keep soaking surplus the full pack would otherwise curtail. Sits within the model's ~1.5pp forecast noise of 100%, so ordinary evening-load over-prediction no longer trips an aggressive too-early stop (2026-07-22 Model X 4:45 PM incident), while a genuine drain — one where stopping WOULD reach 100% — still triggers a protective stop
-        "ACTION_COOLDOWN_HOURS": 2.0,          // a car's auto-start/auto-stop may repeat after this long (was once per day)
-
-        // On a sunny day the car keeps charging off the surplus (which the
-        // Powerwall, already full, would otherwise curtail) until this many
-        // minutes before the solar/house-load crossover, then it is stopped so
-        // the freed solar tops the Powerwall to 100% with margin before sunset
-        // (the stop also arms the gentle evening HVAC shed — see the collector's
-        // EvaluateEveningHvacAsync). The stop
-        // moves earlier than this only when the afternoon can't otherwise refill
-        // the Powerwall to 100% by the crossover (the car drains it as solar
-        // fades). Replaces the old "reached 100% at some point" test, which let
-        // the car bleed the Powerwall down all evening once it had briefly
-        // touched 100% at midday.
-        "STOP_LOCK_IN_MARGIN_MINUTES": 75,
-
-        // Nightly grid-independence heat-pump routine (ChargeAutomationManager,
-        // EvaluateNightlyHvacAsync — collector-side only; not mirrored on the
-        // dashboard). Priority is grid independence over cooling: run the heat pump
-        // as much as the overnight battery budget allows, but never let the pack
-        // drain to where it would have to import from the grid before the next
-        // morning's solar refills it.
-        //
-        // Step 1 — at the first collector cycle at/after START_HOUR each night, pick
-        // the DYNAMIC starting cool setpoint: forecast the night at BASELINE_COOL_SETPOINT_F
-        // and, if the predicted LOW would fall below MIN_SOC_PERCENT, step the modeled
-        // setpoint up 1 °F at a time (to at most MAX_COOL_SETPOINT_F) until the LOW clears
-        // the floor — then set that. On a low-charge night (the Powerwall drains from ~100%
-        // at the afternoon crossover and is well below full by bedtime) 78 °F could empty
-        // the pack, so the start setpoint rises as needed.
-        // Step 2 — every STEP_INTERVAL_HOURS after that, re-forecast at the current
-        // setpoint; if the LOW dips below MIN_SOC_PERCENT, raise the cool setpoint by 1 °F
-        // (up to MAX_COOL_SETPOINT_F). Up-only after the baseline: never lowered again
-        // overnight (a raised setpoint is the safe state for grid independence); it resumes
-        // on the thermostat's own schedule.
-        // DONE — the night's job is finished the moment morning solar production climbs
-        // above DONE_SOLAR_KW: the pre-dawn low is well behind us and the pack is recovering
-        // ("we made it through the night"), so there's nothing left to protect. This is a
-        // cleaner stop than waiting for a full 100% refill (which can be late or never on a
-        // cloudy day). The cycle then resets and starts again at START_HOUR the same day.
-        "NIGHT_HVAC_START_HOUR": 22,                 // 10 PM — first cycle at/after this starts the routine
-        "NIGHT_HVAC_MORNING_END_HOUR": 12,           // hard backstop: window closes at noon if solar never reaches DONE_SOLAR_KW
-        "NIGHT_HVAC_DONE_SOLAR_KW": 3,               // morning solar above this => made it through the night, stop for the day
-        "NIGHT_HVAC_BASELINE_COOL_SETPOINT_F": 78,   // lowest (coolest) start-of-night setpoint the search begins from
-        "NIGHT_HVAC_MAX_COOL_SETPOINT_F": 82,        // max comfortable temperature — never start at, or step to, above this
-        "NIGHT_HVAC_STEP_INTERVAL_HOURS": 1,         // re-evaluate (and possibly step up) this often after the baseline
-        "NIGHT_HVAC_MIN_SOC_PERCENT": 5,             // keep the overnight forecast LOW at/above this
+        // The night window: the anchor decision fires at the first cycle at/after
+        // START_HOUR, and the window is treated as closed by MORNING_END_HOUR.
+        "NIGHT_HVAC_START_HOUR": 22,                 // 10 PM — first cycle at/after this makes the night's setpoint decision
+        "NIGHT_HVAC_MORNING_END_HOUR": 12,           // hard backstop: the night window closes at noon
+        "NIGHT_HVAC_BASELINE_COOL_SETPOINT_F": 78,   // setpoint the overnight load projection is normalised against
         "NIGHT_HVAC_FORECAST_HORIZON_HOUR": 14,      // cap the overnight forecast at 2 PM next day (backstop when 100% is never reached)
 
         // Setpoint/weather -> load sensitivity for OVERNIGHT projections: the house load
@@ -229,6 +185,10 @@ const SHARED_CONFIG = {
         // before a start is allowed, covering house load that moves between the decision
         // and the car actually drawing (mainly the heat pump cycling on: measured
         // slot-to-slot house-load steps are p90 +0.54 kW, p95 +1.18 kW).
+        // This margin plus STARTUP_DRAW_KW is CONDITION (d) of the controller's start rule
+        // (rule 1) — added 2026-07-25, ratified 2026-07-26. It is deliberately part of the
+        // spec: grid imports among allowed starts went 8 -> 0 once a start had to fit inside
+        // the LIVE surplus. Powerwall-first means a start may never be funded by the pack.
         "START_SURPLUS_MARGIN_KW": 0.5,
         "USER_LOCK_HOURS": 2,            // after a detected MANUAL car start/stop, the automation won't override it for this long
         "AUTO_SETTLE_MINUTES": 30,       // minimum gap after one automated car action before the opposite one (let rates settle / don't instantly restart)

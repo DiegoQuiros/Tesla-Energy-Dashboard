@@ -32,6 +32,11 @@ const AUTOMATION_LOG_ACTION_STYLES = {
     LIMIT_100: { label: 'Limit → 100%', color: '#b58cff' },
     LIMIT_85:  { label: 'Limit → 85%',  color: '#9aa7bd' },
     STORM:     { label: 'Storm mode',   color: '#ffcf5c' },
+    // A command the car answered "nothing to do" to (already charging, already at the limit,
+    // unplugged). Not a failure — but it IS logged, so a rejection can never be invisible the
+    // way a console-only line was. Deliberately NOT in isCarSuccess below: "the car says it
+    // isn't plugged in" does not prove the automation regained control of it.
+    NOOP:      { label: 'No action needed', color: '#9aa7bd' },
     FAIL:      { label: 'Command failed', color: '#ff5d5d' }
 };
 

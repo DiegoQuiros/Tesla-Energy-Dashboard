@@ -170,17 +170,24 @@ function createDailySolarChart() {
         const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
         let entry = dailyTotals.get(key);
         if (!entry) {
-            entry = { date: new Date(date.getFullYear(), date.getMonth(), date.getDate()), solarKwh: 0, gridKwh: 0, loadKwh: 0, exportKwh: 0, m3Kwh: 0, mxKwh: 0 };
+            entry = { date: new Date(date.getFullYear(), date.getMonth(), date.getDate()), solarKwh: 0, gridKwh: 0, loadKwh: 0, exportKwh: 0, m3Kwh: 0, mxKwh: 0, m3SuperKwh: 0, mxSuperKwh: 0 };
             dailyTotals.set(key, entry);
         }
         entry.solarKwh += Math.max(0, point.SolarPowerKw || 0) * dtHours;
         entry.gridKwh += Math.max(0, point.GridPowerKw || 0) * dtHours;   // positive = importing
         entry.exportKwh += Math.max(0, -(point.GridPowerKw || 0)) * dtHours; // negative grid = exporting
         entry.loadKwh += Math.max(0, point.LoadPowerKw || 0) * dtHours;
-        // EV charging is part of the load; gate by IsCharging so a stale nonzero
-        // reading on an idle car doesn't count (matches the collector's aggregation)
-        if (point.Model3IsCharging) entry.m3Kwh += Math.max(0, point.Model3ChargerPowerKw || 0) * dtHours;
-        if (point.ModelXIsCharging) entry.mxKwh += Math.max(0, point.ModelXChargerPowerKw || 0) * dtHours;
+        // Home EV charging is part of the load; gate by IsCharging so a stale nonzero
+        // reading on an idle car doesn't count. Fast charging happens away from home, so
+        // it never crossed the house meter — bucket it separately (matches the collector).
+        if (point.Model3IsCharging) {
+            const kwh = Math.max(0, point.Model3ChargerPowerKw || 0) * dtHours;
+            if (point.Model3FastChargerPresent) entry.m3SuperKwh += kwh; else entry.m3Kwh += kwh;
+        }
+        if (point.ModelXIsCharging) {
+            const kwh = Math.max(0, point.ModelXChargerPowerKw || 0) * dtHours;
+            if (point.ModelXFastChargerPresent) entry.mxSuperKwh += kwh; else entry.mxKwh += kwh;
+        }
     }
 
     // Overlay the daily summary blob: authoritative for completed days (it covers
@@ -200,7 +207,9 @@ function createDailySolarChart() {
             loadKwh: s.LoadKwh || 0,
             // Present once the collector/backfill has added per-car fields; 0 until then
             m3Kwh: s.Model3ChargeKwh || 0,
-            mxKwh: s.ModelXChargeKwh || 0
+            mxKwh: s.ModelXChargeKwh || 0,
+            m3SuperKwh: s.Model3SuperchargeKwh || 0,
+            mxSuperKwh: s.ModelXSuperchargeKwh || 0
         });
     }
 
@@ -292,6 +301,7 @@ function updateDailySolarStats(days) {
     }
 
     let totalSolar = 0, totalGrid = 0, totalExport = 0, totalLoad = 0, totalM3 = 0, totalMX = 0;
+    let totalM3Super = 0, totalMXSuper = 0;
     for (const d of days) {
         totalSolar += d.solarKwh || 0;
         totalGrid += d.gridKwh || 0;
@@ -299,6 +309,8 @@ function updateDailySolarStats(days) {
         totalLoad += d.loadKwh || 0;
         totalM3 += d.m3Kwh || 0;
         totalMX += d.mxKwh || 0;
+        totalM3Super += d.m3SuperKwh || 0;
+        totalMXSuper += d.mxSuperKwh || 0;
     }
 
     // Self-reliance: share of everything the home consumed that came from solar +
@@ -324,7 +336,9 @@ function updateDailySolarStats(days) {
         if (run > longestStreak) longestStreak = run;
     }
 
-    // Value of the energy the system supplied instead of buying it from the grid
+    // Value of the energy the system supplied instead of buying it from the grid.
+    // Off-site supercharging is deliberately absent from both terms: it never crossed
+    // the house meter and would have been bought the same way without solar.
     const estSaved = Math.max(0, totalLoad - totalGrid) * ELECTRICITY_RATE_PER_KWH;
     const gridFreePct = Math.round(gridFreeDays / days.length * 100);
 
@@ -368,6 +382,8 @@ function updateDailySolarStats(days) {
         load: totalLoad,
         model3: totalM3,
         modelX: totalMX,
+        model3Super: totalM3Super,
+        modelXSuper: totalMXSuper,
         loss: storageLoss,
         dayCount: days.length,
         rangeStart,
@@ -375,49 +391,68 @@ function updateDailySolarStats(days) {
     });
 }
 
-// Sankey-style yearly energy-flow diagram: everything that came IN (solar + grid)
-// fans through a central total, then OUT to the home, grid export, and the Powerwall
-// storage losses. Ribbon and node heights are proportional to kWh, so the picture
-// balances by construction and the "losses" node explains the solar-vs-usage gap.
+// Sankey-style yearly energy-flow diagram: everything that came IN (solar + grid +
+// supercharging) fans through a central total, then OUT to the home, the cars, grid
+// export, and the Powerwall storage losses. Ribbon and node heights are proportional
+// to kWh, so the picture balances by construction and the "losses" node explains the
+// solar-vs-usage gap.
 function updateEnergyFlowDiagram(t) {
     const el = document.getElementById('energyFlowDiagram');
     if (!el) return;
 
     const captionEl = document.getElementById('energyFlowCaption');
-    const inTotal = t.solar + t.gridImport;
+
+    // Off-site DC fast charging: grid energy bought at a Supercharger. It bypassed the
+    // house meter entirely, so it's its own inflow that lands straight on the cars —
+    // folding it into "Grid in" would corrupt self-reliance and grid-free days.
+    const superTotal = (t.model3Super || 0) + (t.modelXSuper || 0);
+    const inTotal = t.solar + t.gridImport + superTotal;
     if (inTotal <= 0) { el.innerHTML = ''; if (captionEl) captionEl.textContent = ''; return; }
 
     // Clamp tiny rounding negatives; over a year the battery is a net sink so loss > 0
     const loss = Math.max(0, t.loss);
 
-    // Home load minus each car's charging = the non-EV household base
+    // Home load minus each car's home charging = the non-EV household base
     const homeBase = Math.max(0, t.load - (t.model3 || 0) - (t.modelX || 0));
+
+    // Each car's total intake = what it drew at home plus what it took on the road
+    const m3Total = (t.model3 || 0) + (t.model3Super || 0);
+    const mxTotal = (t.modelX || 0) + (t.modelXSuper || 0);
 
     if (captionEl) {
         captionEl.innerHTML =
             `Last ${t.dayCount} days &nbsp;•&nbsp; ${t.rangeStart} – ${t.rangeEnd} &nbsp;•&nbsp; ` +
-            `every kWh in (solar + grid) went to the home, the cars, back to the grid, or was lost cycling the Powerwall`;
+            `every kWh in (solar + grid${superTotal > 0 ? ' + supercharging' : ''}) went to the home, ` +
+            `the cars, back to the grid, or was lost cycling the Powerwall`;
     }
 
     const C = {
-        solar: '#ffcc00', grid: '#ff6b35', pool: '#8090a6',
+        solar: '#ffcc00', grid: '#ff6b35', pool: '#8090a6', super: '#ffa726',
         home: '#7e57c2', m3: '#ec407a', mx: '#2196f3', export: '#26c6da', loss: '#ef5350'
     };
+    const fmt = v => Math.round(v).toLocaleString('en-US');
     const lossTip = 'Energy lost cycling the Powerwall (round-trip conversion + standby). ' +
         'Not delivered to the home or the cars, and not exported to the grid.';
+    const superTip = 'Grid energy bought away from home at a Supercharger. It never passed ' +
+        'through the house meter, so it is excluded from self-reliance and the savings estimate.';
+    const carTip = (name, home, sup) => sup > 0
+        ? `Energy delivered to the ${name}: ${fmt(home)} kWh at home, ${fmt(sup)} kWh supercharged`
+        : `Energy delivered to the ${name}`;
 
     // Inflows and outflows as ordered lists (largest first so bars and colors read
-    // cleanly); only nonzero flows are drawn. Model 3 / Model X are carved out of the
-    // household load, so home + M3 + MX + export + loss still sums to the total in.
+    // cleanly); only nonzero flows are drawn. Home charging is carved out of the
+    // household load and supercharging enters as its own source, so
+    // home + M3 + MX + export + loss still sums to the total in.
     const sources = [
         { name: 'Solar', val: t.solar, color: C.solar },
-        { name: 'Grid in', val: t.gridImport, color: C.grid }
+        { name: 'Grid in', val: t.gridImport, color: C.grid },
+        { name: 'Supercharger', val: superTotal, color: C.super, tip: superTip }
     ].filter(s => s.val > 0).sort((a, b) => b.val - a.val);
 
     const sinks = [
         { name: 'Home', val: homeBase, color: C.home, tip: 'Household load excluding EV charging' },
-        { name: 'Model 3', val: t.model3 || 0, color: C.m3, tip: 'Energy delivered to the Model 3' },
-        { name: 'Model X', val: t.modelX || 0, color: C.mx, tip: 'Energy delivered to the Model X' },
+        { name: 'Model 3', val: m3Total, color: C.m3, tip: carTip('Model 3', t.model3 || 0, t.model3Super || 0) },
+        { name: 'Model X', val: mxTotal, color: C.mx, tip: carTip('Model X', t.modelX || 0, t.modelXSuper || 0) },
         { name: 'Exported', val: t.gridExport, color: C.export, tip: 'Surplus solar sent back to the grid' },
         { name: 'Losses', val: loss, color: C.loss, tip: lossTip }
     ].filter(s => s.val > 0).sort((a, b) => b.val - a.val);
@@ -428,7 +463,6 @@ function updateEnergyFlowDiagram(t) {
     const usableH = yBot - yTop;
     const scale = usableH / inTotal;
     const r = n => n.toFixed(1);
-    const fmt = v => Math.round(v).toLocaleString('en-US');
 
     // Stack a column's segments from the top, recording each one's y / height / center
     const stack = items => {
@@ -495,7 +529,7 @@ function updateEnergyFlowDiagram(t) {
 
     el.innerHTML =
         `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" ` +
-        `aria-label="Yearly energy flow: ${fmt(inTotal)} kWh in; home ${fmt(homeBase)}, Model 3 ${fmt(t.model3 || 0)}, Model X ${fmt(t.modelX || 0)}, exported ${fmt(t.gridExport)}, losses ${fmt(loss)} kWh">` +
+        `aria-label="Yearly energy flow: ${fmt(inTotal)} kWh in; home ${fmt(homeBase)}, Model 3 ${fmt(m3Total)}, Model X ${fmt(mxTotal)}, exported ${fmt(t.gridExport)}, losses ${fmt(loss)} kWh">` +
         `${ribbons}${nodes}${labels}</svg>`;
 }
 
@@ -550,12 +584,12 @@ function createTemperatureChart(todayData) {
         {
             label: 'Outdoor Temperature (Yesterday)',
             data: outdoorTempsYesterday,
-            borderColor: '#cc9900', // Darker shade of yellow
-            backgroundColor: 'rgba(204, 153, 0, 0.05)',
+            borderColor: '#888888', // Same gray the solar chart uses for yesterday
+            backgroundColor: 'rgba(136, 136, 136, 0.05)',
             tension: 0.4,
             borderWidth: 2, // 25% thinner than 3
             pointRadius: 1.5, // 25% smaller than 2
-            pointBackgroundColor: '#cc9900',
+            pointBackgroundColor: '#888888',
             spanGaps: true
         },
         // Today's data
