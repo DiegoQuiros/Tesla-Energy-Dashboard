@@ -222,6 +222,10 @@ function createDailySolarChart() {
     const labels = days.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
     const solarData = days.map(d => Math.round(d.solarKwh * 10) / 10);
     const gridData = days.map(d => Math.round(d.gridKwh * 10) / 10);
+    // Off-site DC fast charging never crossed the house meter, so it's plotted as its
+    // own stack (separate bar) rather than piled onto the solar/grid home-energy stack.
+    const superData = days.map(d => Math.round(((d.m3SuperKwh || 0) + (d.mxSuperKwh || 0)) * 10) / 10);
+    const hasSuper = superData.some(v => v > 0);
 
     dailySolarChart = new Chart(ctx, {
         type: 'bar',
@@ -233,15 +237,25 @@ function createDailySolarChart() {
                     data: solarData,
                     backgroundColor: 'rgba(255, 204, 0, 0.7)',
                     borderColor: '#ffcc00',
-                    borderWidth: 1
+                    borderWidth: 1,
+                    stack: 'home'
                 },
                 {
                     label: 'Grid Used (kWh)',
                     data: gridData,
                     backgroundColor: 'rgba(255, 107, 53, 0.7)',
                     borderColor: '#ff6b35',
-                    borderWidth: 1
-                }
+                    borderWidth: 1,
+                    stack: 'home'
+                },
+                ...(hasSuper ? [{
+                    label: 'Supercharging (kWh)',
+                    data: superData,
+                    backgroundColor: 'rgba(255, 167, 38, 0.7)',
+                    borderColor: '#ffa726',
+                    borderWidth: 1,
+                    stack: 'ev'
+                }] : [])
             ]
         },
         options: {
