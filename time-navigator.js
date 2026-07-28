@@ -28,21 +28,27 @@ class TimeNavigator {
                     <span class="tnt-badge live" id="timeNavToggleBadge">🔴 LIVE</span>
                     <span class="tnt-chevron" aria-hidden="true">▾</span>
                 </button>
-                <button id="timeNavBack" class="time-nav-btn" title="Go back ${this.timeStep} minutes">
-                    <span>⏪</span>
+                <button id="timeNavDayBack" class="time-nav-btn time-nav-btn-day" title="Go back 1 day">
+                    <span>-1 Day</span>
                 </button>
                 <button id="timeNavBackFast" class="time-nav-btn" title="Go back 1 hour">
                     <span>⏮️</span>
+                </button>
+                <button id="timeNavBack" class="time-nav-btn" title="Go back ${this.timeStep} minutes">
+                    <span>⏪</span>
                 </button>
                 <div class="time-display-container">
                     <div id="timeDisplay" class="time-display">Live Mode</div>
                     <div id="timeModeIndicator" class="time-mode-indicator live">🔴 LIVE</div>
                 </div>
+                <button id="timeNavForward" class="time-nav-btn" title="Go forward ${this.timeStep} minutes">
+                    <span>⏩</span>
+                </button>
                 <button id="timeNavForwardFast" class="time-nav-btn" title="Go forward 1 hour">
                     <span>⏭️</span>
                 </button>
-                <button id="timeNavForward" class="time-nav-btn" title="Go forward ${this.timeStep} minutes">
-                    <span>⏩</span>
+                <button id="timeNavDayForward" class="time-nav-btn time-nav-btn-day" title="Go forward 1 day">
+                    <span>+1 Day</span>
                 </button>
                 <button id="timeNavLive" class="time-nav-btn live-btn" title="Return to live mode">
                     <span>🔴 LIVE</span>
@@ -63,10 +69,12 @@ class TimeNavigator {
     }
 
     bindEvents() {
+        document.getElementById('timeNavDayBack').addEventListener('click', () => this.stepTime(-1440));
         document.getElementById('timeNavBack').addEventListener('click', () => this.stepTime(-this.timeStep));
         document.getElementById('timeNavBackFast').addEventListener('click', () => this.stepTime(-60));
         document.getElementById('timeNavForward').addEventListener('click', () => this.stepTime(this.timeStep));
         document.getElementById('timeNavForwardFast').addEventListener('click', () => this.stepTime(60));
+        document.getElementById('timeNavDayForward').addEventListener('click', () => this.stepTime(1440));
         document.getElementById('timeNavLive').addEventListener('click', () => this.goToLiveMode());
 
         // Collapse / expand the navigator
@@ -255,23 +263,28 @@ class TimeNavigator {
     }
 
     updateButtonStates() {
+        const dayBackBtn = document.getElementById('timeNavDayBack');
         const backBtn = document.getElementById('timeNavBack');
         const backFastBtn = document.getElementById('timeNavBackFast');
         const forwardBtn = document.getElementById('timeNavForward');
         const forwardFastBtn = document.getElementById('timeNavForwardFast');
+        const dayForwardBtn = document.getElementById('timeNavDayForward');
 
         if (this.isLiveMode) {
             // In live mode, only back buttons are enabled
+            dayBackBtn.disabled = false;
             backBtn.disabled = false;
             backFastBtn.disabled = false;
             forwardBtn.disabled = true;
             forwardFastBtn.disabled = true;
+            dayForwardBtn.disabled = true;
         } else {
             const earliestTime = this.getEarliestDataTime();
             const latestTime = this.getLatestDataTime();
 
             // Check if we can go back further
             const canGoBack = this.selectedTime > earliestTime;
+            dayBackBtn.disabled = !canGoBack;
             backBtn.disabled = !canGoBack;
             backFastBtn.disabled = !canGoBack;
 
@@ -279,6 +292,7 @@ class TimeNavigator {
             const canGoForward = this.selectedTime < latestTime;
             forwardBtn.disabled = !canGoForward;
             forwardFastBtn.disabled = !canGoForward;
+            dayForwardBtn.disabled = !canGoForward;
         }
     }
 

@@ -6,6 +6,11 @@ const AUTOMATION_LOG_URL = 'https://powermanagestorage.blob.core.windows.net/ene
 // every collector cycle. The battery chart renders these markers instead of re-deciding
 // them in JavaScript — see the header of ChargeAutomationManager.Plan.cs.
 const AUTOMATION_PLAN_URL = 'https://powermanagestorage.blob.core.windows.net/energy-data/automation-plan.json';
+// The 16-day weather/solar outlook, fetched from Open-Meteo by the collector and
+// republished every cycle. The browser used to call Open-Meteo itself and fall back to
+// NWS — which has no radiation data, so the fallback silently dropped the predicted-solar
+// chart. See the header of WeatherForecastManager.cs.
+const WEATHER_FORECAST_URL = 'https://powermanagestorage.blob.core.windows.net/energy-data/weather-forecast.json';
 
 let energyData = [];
 let dailySummaryData = []; // Per-day kWh totals maintained by the collector job

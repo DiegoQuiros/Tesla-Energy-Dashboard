@@ -85,10 +85,10 @@ async function loadEnergyData() {
             throw new Error('No data available');
         }
 
-        // Store the timestamp of the latest data
+        // Store the timestamp of the latest data. Scheduling the next refresh is
+        // refreshData()'s job in main.js — a single timer owns the whole cycle.
+        const previousTimestamp = lastDataTimestamp;
         lastDataTimestamp = convertToPDT(energyData[energyData.length - 1].LocalTimestamp);
-
-        scheduleSmartRefresh();
 
         // Clear any error banner left over from a previous failed refresh
         document.getElementById('error').style.display = 'none';
@@ -101,6 +101,16 @@ async function loadEnergyData() {
         // Unforced, so it no-ops against the page-load fetch a moment earlier.
         if (typeof window.loadAutomationLog === 'function') {
             window.loadAutomationLog();
+        }
+
+        // Re-draw the charts only when the payload actually advanced. A poll that
+        // races the collector returns the SAME sample, and re-animating the charts
+        // against it reads as an update while the timestamp label written just
+        // above doesn't move — the chart and the label must always show the same
+        // cycle. (First load has no previous timestamp, so it always renders.)
+        if (previousTimestamp && lastDataTimestamp.getTime() === previousTimestamp.getTime()) {
+            console.log('No new sample — leaving charts as they are');
+            return true;
         }
 
         if (typeof Chart !== 'undefined') {

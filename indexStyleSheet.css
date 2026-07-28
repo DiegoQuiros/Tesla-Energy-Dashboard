@@ -187,11 +187,21 @@ body {
     margin-bottom: 20px;
 }
 
-/* 16-day forecast: temperature-range and solar-potential charts side by side */
+/* 16-day forecast: temperature-range and solar-potential charts side by side,
+   stretched to fill whatever vertical space the Weather card has (matched to
+   the other charts-grid cards via --card-height) instead of leaving empty
+   space below a fixed-height chart. */
+#weatherForecast {
+    display: flex;
+    flex-direction: column;
+}
+
 .forecast-charts-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 20px;
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 @media (max-width: 900px) {
@@ -200,15 +210,23 @@ body {
     }
 }
 
+.forecast-chart-col {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
 .forecast-chart-title {
     font-weight: bold;
     color: #87ceeb;
     margin: 14px 0 6px;
+    flex-shrink: 0;
 }
 
 .forecast-chart-wrapper {
     position: relative;
-    height: 220px;
+    flex: 1 1 auto;
+    min-height: 220px;
 }
 
 
@@ -661,9 +679,23 @@ body {
         }
 
     .energy-flow-section .last-updated {
+        /* Fixed to the viewport (not the section) so it stays visible while scrolling.
+           Anchored bottom-right: the time-navigator sticky bar owns the top of the
+           viewport in both its expanded and collapsed states, so bottom is the one
+           corner that's never contested. */
+        position: fixed;
+        bottom: 16px;
+        right: 16px;
+        z-index: 900;
         color: #7c8aa5;
         font-size: 0.82rem;
         font-weight: 500;
+        background: rgba(10, 14, 22, 0.75);
+        padding: 6px 14px;
+        border-radius: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(6px);
     }
 
 /* Responsive stage: laid out in a fixed 1100x600 space, scaled to fit its container */
@@ -911,8 +943,47 @@ body {
 
 /* Ensure chart area uses full width inside the container */
 .charts-grid .chart-container .chart-wrapper {
-    width: 95%;
+    width: 100%;
 }
+
+/* Match every card's height to the Energy Flow hero card (--card-height, set
+   by card-height-sync.js) so scroll-snapping between cards feels like flipping
+   full-height pages. The alerts banner is excluded — it only ever holds a
+   couple of short warnings and would look empty stretched full-height, and
+   collapsed charts are excluded so they can still shrink to their header. */
+.charts-grid .chart-container:not(.chart-collapsed):not(.automation-alerts-card) {
+    height: var(--card-height, auto);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+    .charts-grid .chart-container:not(.chart-collapsed):not(.automation-alerts-card) > h3 {
+        flex-shrink: 0;
+    }
+
+    /* Fixed-size header blocks: never let them get squeezed by the flex layout */
+    .charts-grid .chart-container:not(.chart-collapsed):not(.automation-alerts-card) .hvac-stats,
+    .charts-grid .chart-container:not(.chart-collapsed):not(.automation-alerts-card) .weather-current,
+    .charts-grid .chart-container:not(.chart-collapsed):not(.automation-alerts-card) .solar-year-summary,
+    .charts-grid .chart-container:not(.chart-collapsed):not(.automation-alerts-card) .flow-caption {
+        flex-shrink: 0;
+    }
+
+    /* Chart canvases resize to fill the remaining space (Chart.js is responsive) */
+    .charts-grid .chart-container:not(.chart-collapsed):not(.automation-alerts-card) .chart-wrapper {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+
+    /* Non-chart content areas scroll internally instead of overflowing the card */
+    .charts-grid .chart-container:not(.chart-collapsed):not(.automation-alerts-card) .energy-flow-diagram,
+    .charts-grid .chart-container:not(.chart-collapsed):not(.automation-alerts-card) #weatherForecast,
+    .charts-grid .chart-container:not(.chart-collapsed):not(.automation-alerts-card) .automation-log-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: hidden;
+    }
 
 /* Keep better spacing on small screens */
 @media (max-width: 768px) {
@@ -983,10 +1054,9 @@ body {
 }
 
 /* ── Automation Log card ─────────────────────────────────────────────── */
-/* Scrollable body, matched to the chart-wrapper height (400px) so the card
-   is the same size as "Daily Solar Production (Last 12 Months)". */
+/* Scrollable body; height comes from the shared --card-height flex rule
+   above so the card matches the other charts-grid cards. */
 .automation-log-body {
-    height: 400px;
     overflow-y: auto;
     padding-right: 6px;
     display: flex;

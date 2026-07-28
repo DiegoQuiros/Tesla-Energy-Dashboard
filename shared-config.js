@@ -52,6 +52,26 @@ const SHARED_CONFIG = {
         "POTENTIAL_AFTERNOON_FACTOR": 0.80,     // fraction of the mirrored-morning envelope the panels deliver post-noon
         "POTENTIAL_AFTERNOON_RAMP_HOURS": 1.0,  // hours past solar noon to ramp from 1.0 down to AFTERNOON_FACTOR
 
+        // Discharge-side conversion loss. The sims used to drain the modeled pack 1:1
+        // with the AC net load, but the Powerwall's SOC falls FASTER than it delivers:
+        // measured across 45 nights (2026-06-10 → 2026-07-27, 10 PM → 6:15 AM, nights
+        // with home EV charging excluded), the SOC drop in kWh ran ~1.16x the delivered
+        // load (per-night implied one-way efficiency: median 0.872, IQR 0.82–0.93) —
+        // inverter conversion plus gateway/electronics overhead. That made every
+        // overnight forecast optimistic: mean error +8.3 pp at 6:15 AM (median +7.9).
+        // Model: packRate = acRate / EFFICIENCY − STANDBY while discharging (acRate < 0),
+        // untouched while charging (the daytime surplus dwarfs the loss and the pack
+        // clamps at 100% anyway). Fit by grid search replaying those 45 nights:
+        // 0.92 / 0.10 zeroes the bias (+8.3 → −0.1 pp; MAE 9.6 → 5.5 pp) and the
+        // optimum is flat (η 0.90–0.93 × standby 0.08–0.12 all within 0.1 pp), so the
+        // physically-shaped pair — ~92% one-way inverter efficiency + ~100 W constant
+        // overhead — was chosen over a pure divisor (0.80 alone scores the same but
+        // buries the time-proportional overhead in the load-proportional term, which
+        // would extrapolate wrong on longer winter nights). Remaining MAE is
+        // night-to-night HVAC variance, not bias.
+        "POWERWALL_DISCHARGE_EFFICIENCY": 0.92, // AC kWh delivered per SOC kWh drained while discharging
+        "POWERWALL_STANDBY_DRAIN_KW": 0.10,     // constant gateway/electronics overhead while discharging
+
         // How far past midnight the Battery Levels chart (and therefore the projection
         // the collector publishes in automation-plan.json) runs, so the overnight drain
         // and the next morning's recharge are on screen. Shared because the C# projector
@@ -149,7 +169,18 @@ const SHARED_CONFIG = {
         "OVERNIGHT_RECOVER_PERCENT": 15, // step the heat pump back DOWN toward base only when the overnight low is at/above this (dead band vs the 5% floor prevents flapping)
         "CAR_PROTECT_SOC_PERCENT": 50,   // a charging car at/below this SOC is protected — shed the heat pump instead of stopping it
         "COMFORT_MIN_F": 76,             // coolest allowed cool setpoint (only reached when excess solar would otherwise be wasted)
-        "COMFORT_BASE_F": 78,            // resting/night cool setpoint — day and night floor for normal operation
+        // Resting cool setpoint — the floor rule 6's comfort descent walks down to, day and
+        // night. RAISED 78 -> 79 on 2026-07-27 (Diego): the cars are the priority for spare
+        // energy, and the last degree from 79 to 78 costs ~0.7 kW of house load (the measured
+        // daytime sensitivity) that would otherwise be charging a car or filling the pack. The
+        // automation no longer spends it on its own. 78 and below is still REACHABLE, but only
+        // through the banking rule below — i.e. only when there is measured waste to pay for it,
+        // which is exactly "once the cars are charged, send the unused energy to the heat pump".
+        // Side effect worth knowing: banking's depth is COMFORT_BASE_F - COMFORT_MIN_F, so the
+        // ladder is now 3 degrees (79->76) rather than 2. Each further degree needs proportionally
+        // more waste signal, so the third one is self-limiting and rarely reached; raise
+        // COMFORT_MIN_F to 77 if you want the old 2-degree depth back.
+        "COMFORT_BASE_F": 79,            // resting/night cool setpoint — day and night floor for normal operation
         "COMFORT_MAX_F": 82,             // hottest (least cooling) allowed — the survival ceiling the step-ups climb to
         "DRAIN_DEBOUNCE_CYCLES": 2,      // consecutive cycles of "below target AND discharging" before a reactive car stop (rejects a passing cloud)
         "MIN_CAR_KWH": 1,                // a car must be able to take at least this many kWh (headroom below its limit) to be worth starting
@@ -157,28 +188,35 @@ const SHARED_CONFIG = {
 
         // Opening draw of a home charging session, per car, in kW — what the car
         // INSISTS on pulling in its first slots even when the sun cannot cover it.
-        // MEASURED over 380 archived home-charging starts (Aug 2025 - Jul 2026):
-        //   * The clock does not matter. Holding the surplus comparable (3-5 kW) and
-        //     splitting by hour gives flat ~2.9-3.9 kW medians across 08:00-16:00 for
-        //     both cars — the apparent time-of-day pattern in the raw numbers is the
-        //     solar surplus in disguise, so there is deliberately no hour term.
-        //   * The draw does not ramp in. Median power at t+0/+15/+30/+45/+60 min is
-        //     flat (Model X 3.50/3.60/3.50/3.37/4.11 kW), so the opening slot already
-        //     IS the session's rate.
-        //   * The car opens at min(what it asks for, what the solar manager allows).
-        //     A request at or below ~21 A is granted in full (0 of 62 starts throttled);
-        //     32 A / 48 A requests are throttled almost always (204 of 242).
-        //   * The throttle tracks the surplus once there IS one (opening amps ÷
-        //     surplus-implied amps ~0.9-1.0 above 2 kW of surplus) but does NOT fall to
-        //     zero with it: with under 1 kW of surplus the cars still opened at a median
-        //     2.49 kW (Model 3, 10 A) and 3.63 kW (Model X, 15 A). THAT is the floor
-        //     that drains the Powerwall on an early-morning start.
+        // RE-MEASURED 2026-07-27 over 607 daytime starts (Aug 2025 - Jul 2026), split
+        // into SOLAR-MANAGED starts (opening amps <= 75% of the car's request — Tesla's
+        // solar charging manager set the rate) vs FULL-RATE ones. The original 2.5/3.6
+        // "floors" were a draw-vs-DRAIN confusion:
+        //   * The old numbers were the median opening DRAW at low pre-start surplus —
+        //     but that draw was solar-funded (surplus ramps between the pre-start sample
+        //     and the opening one). The pack+grid contribution at the opening sample of
+        //     a MANAGED start is median 0.00 kW at EVERY surplus level (Model 3; p90
+        //     <= 0.8 kW below 2 kW of surplus, 0.00 above), confirming Diego's 2026-07-27
+        //     8:15 AM observation: the manager holds the car AT the live surplus and the
+        //     Powerwall stays even.
+        //   * The starts that DO slam the pack are FULL-RATE ones (median pack+grid
+        //     +1.9 to +2.0 kW, p90 8-9 kW at low surplus) — manual winter 32/48 A
+        //     charging the automation never issues.
+        //   * Above ~2 kW (M3) / ~3 kW (MX) of surplus the gate stops discriminating:
+        //     the residual ~7-10% of managed starts that later show a sustained drain
+        //     are clouds/house-load moves mid-session, which the reactive stop rule
+        //     already handles. Raising the gate further just delays starts (~30 min per
+        //     kW on a morning ramp) without reducing that rate.
+        //   * Still true from the 2026-07-25 measurement: no time-of-day term (the
+        //     hourly pattern is surplus in disguise), no ramp-in (the opening slot is
+        //     the session's rate), and the car opens at min(request, manager's grant).
         // Used by ExpectedStartupDrawKw / StartupInsistKw in ChargeAutomationManager.
         // Controller.cs. Re-measure with the same archive replay if the cars, the wall
         // connector or Tesla's solar-charging behavior change.
         "STARTUP_DRAW_KW": {
-            "MODEL_3": 2.5,              // median opening draw with no surplus to follow (~10 A)
-            "MODEL_X": 3.6               // median opening draw with no surplus to follow (~15 A)
+            "MODEL_3": 1.5,              // was 2.5 until 2026-07-27; managed-start drains vanish once surplus >= ~2 kW (this + margin)
+            "MODEL_X": 2.5               // was 3.6; kept higher than M3 — MX opens harder (med 3.4-4.8 kW) and has only been
+                                         // solar-managed since May 2026 (0 managed starts before), so only ~3 months of evidence
         },
 
         // Headroom the solar surplus must have OVER the car's insisted-on opening draw
@@ -189,6 +227,9 @@ const SHARED_CONFIG = {
         // (rule 1) — added 2026-07-25, ratified 2026-07-26. It is deliberately part of the
         // spec: grid imports among allowed starts went 8 -> 0 once a start had to fit inside
         // the LIVE surplus. Powerwall-first means a start may never be funded by the pack.
+        // Re-examined 2026-07-27 with the managed/full-rate split: keeping it. At the new
+        // lower floors it still trims the marginal starts (M3 sustained-drain 12 -> 10 of
+        // 158/140 allowed) and costs only ~15 min on a morning ramp.
         "START_SURPLUS_MARGIN_KW": 0.5,
         "USER_LOCK_HOURS": 2,            // after a detected MANUAL car start/stop, the automation won't override it for this long
         "AUTO_SETTLE_MINUTES": 30,       // minimum gap after one automated car action before the opposite one (let rates settle / don't instantly restart)

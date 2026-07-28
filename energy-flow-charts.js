@@ -67,7 +67,9 @@ function updateEnergyFlowHouse(latest) {
     // ---- numeric readouts ----
     const setText = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
     setText('flowSolarValue', `${solarPower.toFixed(1)} kW`);
-    setText('flowPowerwallValue', `${Math.abs(batteryPower).toFixed(1)} kW`);
+    const powerwallKw = Math.abs(batteryPower);
+    const powerwallAmps = Math.round((powerwallKw * 1000) / 240);
+    setText('flowPowerwallValue', `${powerwallKw.toFixed(1)} kW • ${powerwallAmps}A`);
 
     // Split household load: when the Bryant API reports the heat pump actively
     // running (active_cool/active_heat), Home is pinned at 0.5 kW and the heat

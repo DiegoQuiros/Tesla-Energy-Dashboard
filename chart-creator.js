@@ -254,7 +254,8 @@ function createDailySolarChart() {
                     backgroundColor: 'rgba(255, 167, 38, 0.7)',
                     borderColor: '#ffa726',
                     borderWidth: 1,
-                    stack: 'ev'
+                    stack: 'ev',
+                    hidden: true
                 }] : [])
             ]
         },
@@ -410,7 +411,28 @@ function updateDailySolarStats(days) {
 // export, and the Powerwall storage losses. Ribbon and node heights are proportional
 // to kWh, so the picture balances by construction and the "losses" node explains the
 // solar-vs-usage gap.
+//
+// The card's height is matched to other charts-grid cards (see --card-height in
+// indexStyleSheet.css), which is usually taller than this diagram's fixed 960x360
+// design. Rather than leave that extra height empty below the drawing, the viewBox's
+// height is recomputed to match the container's actual aspect ratio, so the ribbon
+// area grows to fill whatever space the card gives it. A ResizeObserver re-renders
+// when that space changes (e.g. once --card-height settles after data loads).
+let lastEnergyFlowTotals = null;
+
 function updateEnergyFlowDiagram(t) {
+    const el = document.getElementById('energyFlowDiagram');
+    if (!el) return;
+
+    lastEnergyFlowTotals = t;
+    if (!el.dataset.flowResizeObserved) {
+        el.dataset.flowResizeObserved = '1';
+        new ResizeObserver(() => lastEnergyFlowTotals && renderEnergyFlowDiagram(lastEnergyFlowTotals)).observe(el);
+    }
+    renderEnergyFlowDiagram(t);
+}
+
+function renderEnergyFlowDiagram(t) {
     const el = document.getElementById('energyFlowDiagram');
     if (!el) return;
 
@@ -471,8 +493,20 @@ function updateEnergyFlowDiagram(t) {
         { name: 'Losses', val: loss, color: C.loss, tip: lossTip }
     ].filter(s => s.val > 0).sort((a, b) => b.val - a.val);
 
-    // Canvas geometry (SVG user units; scales responsively via viewBox)
-    const W = 960, H = 360, yTop = 62, yBot = 322, barW = 15;
+    // Canvas geometry (SVG user units; scales responsively via viewBox). W stays at
+    // the design width of 960; H is stretched to match the container's actual
+    // aspect ratio so the drawing fills the card's real height instead of a fixed
+    // 360, with the top/bottom margins held constant and the ribbon band (yTop..yBot)
+    // absorbing the extra space.
+    const W = 960;
+    // The svg is capped at max-width:1100px (see .energy-flow-diagram svg), so on
+    // wide cards its rendered width is narrower than the container: use that
+    // capped width, not the container's, or the aspect ratio undershoots and
+    // the old empty-space-below gap comes right back.
+    const containerW = Math.min(el.clientWidth || W, 1100);
+    const containerH = el.clientHeight || 360;
+    const H = Math.max(260, W * containerH / containerW);
+    const yTop = 62, yBot = H - 38, barW = 15;
     const leftX = 236, poolX = 470, rightX = 704;
     const usableH = yBot - yTop;
     const scale = usableH / inTotal;
@@ -1325,16 +1359,13 @@ function automationChartEvents(gridStart, now) {
         const actions = Array.isArray(plan.PlannedActions)
             ? plan.PlannedActions
             : [plan.PredictedStart, plan.PredictedStop].concat(plan.PlannedHvacSteps || []);
-        // Kill-switch on => the plan's actions are what the rules WOULD do (nothing
-        // will be commanded); the tooltip says so instead of promising "Planned".
-        const wouldOnly = plan.AutomationEnabled === false;
         for (const a of actions) {
             if (!a || !AUTOMATION_ICONS[a.Action] || !a.TimePacific) continue;
             const t = parsePlanTime(a.TimePacific);
             if (!t || t < now || t >= gridEnd) continue;
             events.push({
                 time: t, action: a.Action, target: a.Target, reason: a.Reason,
-                planned: true, informational: !!a.Informational, wouldOnly
+                planned: true, informational: !!a.Informational
             });
         }
     }
@@ -1385,7 +1416,7 @@ function automationIconTooltip(ev) {
     const when = ev.time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
     const state = ev.informational ? 'Expected'
         : !ev.planned ? 'Done'
-        : ev.wouldOnly ? 'Would (automation off)' : 'Planned';
+        : 'Planned';
     const lines = [`${state}: ${style.label} — ${ev.target} @ ${when}`];
     // Wrap the reason to keep the tooltip readable
     const words = String(ev.reason || '').split(' ');
