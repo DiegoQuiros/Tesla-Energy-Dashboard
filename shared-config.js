@@ -180,7 +180,7 @@ const SHARED_CONFIG = {
         // ladder is now 3 degrees (79->76) rather than 2. Each further degree needs proportionally
         // more waste signal, so the third one is self-limiting and rarely reached; raise
         // COMFORT_MIN_F to 77 if you want the old 2-degree depth back.
-        "COMFORT_BASE_F": 79,            // resting/night cool setpoint — day and night floor for normal operation
+        "COMFORT_BASE_F": 80,            // resting/night cool setpoint — day and night floor for normal operation
         "COMFORT_MAX_F": 82,             // hottest (least cooling) allowed — the survival ceiling the step-ups climb to
         "DRAIN_DEBOUNCE_CYCLES": 2,      // consecutive cycles of "below target AND discharging" before a reactive car stop (rejects a passing cloud)
         "MIN_CAR_KWH": 1,                // a car must be able to take at least this many kWh (headroom below its limit) to be worth starting
