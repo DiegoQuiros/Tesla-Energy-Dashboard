@@ -4,10 +4,14 @@
     top: 0;
     z-index: 1000;
     background: linear-gradient(145deg, #1a1a1a, #2d2d2d);
-    border-radius: 0 0 12px 12px;
-    padding: 8px 16px;
-    margin: 0 0 15px 0;
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+    border-radius: 0 0 8px 8px;
+    padding: 2px 6px;
+    /* Hug the controls instead of stretching the whole page width */
+    width: fit-content;
+    max-width: 100%;
+    box-sizing: border-box;
+    margin: 0 auto 6px auto;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
     border: 1px solid rgba(255, 255, 255, 0.1);
     backdrop-filter: blur(10px);
 }
@@ -16,12 +20,16 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
+    gap: 4px;
     flex-wrap: wrap;
+    /* Shrink-wrap the row and center it, so the tinted box hugs the controls
+       instead of stretching across the page */
+    width: fit-content;
+    margin: 0 auto;
     /* Fixed at all times (not just historical-mode) so switching modes never changes
        box size and shifts the nav buttons sideways */
-    padding: 15px;
-    border-radius: 12px;
+    padding: 3px 6px;
+    border-radius: 8px;
     border: 1px solid transparent;
     box-sizing: border-box;
 }
@@ -35,13 +43,13 @@
     gap: 8px;
     background: linear-gradient(145deg, #2a2a2a, #3a3a3a);
     border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 10px;
+    border-radius: 8px;
     color: #ffffff;
     cursor: pointer;
-    padding: 6px 14px;
-    font-size: 0.95rem;
+    padding: 3px 10px;
+    font-size: 0.8rem;
     font-weight: 600;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
     transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
 }
 
@@ -57,7 +65,7 @@
     }
 
 .tnt-clock {
-    font-size: 1rem;
+    font-size: 0.85rem;
     line-height: 1;
 }
 
@@ -97,11 +105,11 @@
     justify-content: center;
     background: rgba(255, 255, 255, 0.06);
     border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 10px;
+    border-radius: 7px;
     color: #ffffff;
     cursor: pointer;
-    padding: 6px 11px;
-    font-size: 0.85rem;
+    padding: 3px 7px;
+    font-size: 0.7rem;
     line-height: 1;
     transition: background 0.2s ease, border-color 0.2s ease;
 }
@@ -122,7 +130,9 @@
     box-shadow: none;
     border: none;
     backdrop-filter: none;
-    padding: 6px 16px;
+    padding: 3px 8px;
+    /* Full width again so the lone pill can float to the far right */
+    width: 100%;
 }
 
     .time-navigator-container.collapsed .time-navigator-controls > *:not(.time-nav-toggle) {
@@ -140,24 +150,27 @@
         padding: 0;
     }
 
-    /* Collapsed: float the lone pill to the far right (expanded bar stays centered) */
+    /* Collapsed: float the lone pill to the far right (expanded bar stays centered).
+       Needs full width because the expanded bar is fit-content + auto margins. */
     .time-navigator-container.collapsed .time-navigator-controls {
         justify-content: flex-end;
+        width: 100%;
     }
 
 .time-nav-btn {
     background: linear-gradient(145deg, #2a2a2a, #3a3a3a);
     border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 12px;
+    border-radius: 7px;
     color: #ffffff;
     cursor: pointer;
-    padding: 6px 12px;
-    font-size: 1rem;
+    padding: 2px 7px;
+    font-size: 0.85rem;
     font-weight: 600;
+    line-height: 1.15;
     transition: all 0.3s ease;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     backdrop-filter: blur(10px);
-    min-width: 50px;
+    min-width: 30px;
 }
 
     .time-nav-btn:hover:not(:disabled) {
@@ -183,14 +196,14 @@
         background: linear-gradient(145deg, #dc3545, #c82333);
         border-color: #dc3545;
         color: white;
-        font-size: 1rem;
+        font-size: 0.8rem;
         animation: pulse-red 2s infinite;
     }
 
 .time-nav-btn-day {
-    font-size: 0.75rem;
-    min-width: 56px;
-    padding: 6px 8px;
+    font-size: 0.68rem;
+    min-width: 42px;
+    padding: 2px 5px;
 }
 
         .time-nav-btn.live-btn:hover:not(:disabled) {
@@ -202,36 +215,38 @@
     display: flex;
     flex-direction: row;
     align-items: center;
-    gap: 8px;
-    margin: 0 10px;
+    gap: 4px;
+    margin: 0 4px;
 }
 
 .time-display {
-    font-size: 1.1rem;
+    font-size: 0.85rem;
     font-weight: bold;
     color: #ffffff;
     text-align: center;
-    padding: 6px 14px;
+    padding: 2px 8px;
     background: rgba(0, 0, 0, 0.3);
-    border-radius: 8px;
+    border-radius: 6px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     backdrop-filter: blur(5px);
     white-space: nowrap;
+    line-height: 1.2;
     /* Fixed so switching Live <-> Historical text doesn't reflow the buttons beside it */
-    min-width: 230px;
+    min-width: 168px;
     box-sizing: border-box;
 }
 
 .time-mode-indicator {
-    font-size: 0.9rem;
+    font-size: 0.7rem;
     font-weight: 600;
-    padding: 4px 12px;
-    border-radius: 20px;
+    padding: 2px 7px;
+    border-radius: 12px;
     text-align: center;
     transition: all 0.3s ease;
     white-space: nowrap;
+    line-height: 1.3;
     /* Fixed so the LIVE/HISTORICAL badge doesn't change width and shift the nav buttons */
-    min-width: 130px;
+    min-width: 96px;
     box-sizing: border-box;
 }
 
@@ -400,13 +415,13 @@
 .calendar-picker-container {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-left: 10px;
+    gap: 4px;
+    margin-left: 4px;
 }
 
 .calendar-label {
     color: #ffffff;
-    font-size: 0.9rem;
+    font-size: 0.72rem;
     font-weight: 600;
     white-space: nowrap;
 }
@@ -414,10 +429,10 @@
 .calendar-date-input {
     background: linear-gradient(145deg, #2a2a2a, #3a3a3a);
     border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 8px;
+    border-radius: 6px;
     color: #ffffff;
-    padding: 5px 10px;
-    font-size: 0.9rem;
+    padding: 1px 5px;
+    font-size: 0.72rem;
     cursor: pointer;
     transition: all 0.3s ease;
 }

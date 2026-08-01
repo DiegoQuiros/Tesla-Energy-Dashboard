@@ -11,6 +11,8 @@ const AUTOMATION_PLAN_URL = 'https://powermanagestorage.blob.core.windows.net/en
 // NWS — which has no radiation data, so the fallback silently dropped the predicted-solar
 // chart. See the header of WeatherForecastManager.cs.
 const WEATHER_FORECAST_URL = 'https://powermanagestorage.blob.core.windows.net/energy-data/weather-forecast.json';
+// The LLM-written daily recap, published once per day by AiBriefingManager.cs.
+const AI_BRIEFING_URL = 'https://powermanagestorage.blob.core.windows.net/energy-data/ai-briefing.json';
 
 let energyData = [];
 let dailySummaryData = []; // Per-day kWh totals maintained by the collector job

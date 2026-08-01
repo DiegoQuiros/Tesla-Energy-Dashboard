@@ -980,8 +980,8 @@
 
             <div class="charts-grid">
                 <!-- Automation Alerts — failed-command warnings live here (above the
-                     battery chart) so they no longer overlay it. Hidden entirely when
-                     there are none; populated by automation-log.js. -->
+         battery chart) so they no longer overlay it. Hidden entirely when
+         there are none; populated by automation-log.js. -->
                 <div class="chart-container automation-alerts-card" id="automationAlertsCard" hidden>
                     <h3>⚠️ Automation Alerts</h3>
                     <div class="automation-alerts-body" id="automationAlertsBody"></div>
@@ -1101,6 +1101,15 @@
                     </div>
                 </div>
 
+                <!-- AI Daily Briefing — LLM recap of yesterday (ai-briefing.json,
+                     written once per day by AiBriefingManager; ai-briefing.js renders) -->
+                <div class="chart-container" id="aiBriefingContainer">
+                    <h3>🧠 AI Daily Briefing</h3>
+                    <div id="aiBriefingBody" class="automation-log-body">
+                        <div style="color: #b0c4de;">Loading…</div>
+                    </div>
+                </div>
+
                 <!-- Automation Log — actions taken by the unified energy controller -->
                 <div class="chart-container" id="automationLogContainer">
                     <h3>🤖 Automation Log</h3>
@@ -1124,6 +1133,7 @@
     <script src="chart-maximizer.js"></script>
     <script src="chart-collapse.js"></script>
     <script src="automation-log.js"></script>
+    <script src="ai-briefing.js"></script>
     <script src="card-height-sync.js"></script>
     <script src="main.js"></script>
 </body>

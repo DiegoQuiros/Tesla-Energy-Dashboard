@@ -128,11 +128,28 @@ class TimeNavigator {
 
             // Don't allow going too far back (beyond available data)
             const earliestTime = this.getEarliestDataTime();
-            if (newTime < earliestTime) {
-                this.selectedTime = earliestTime;
-            } else {
-                this.selectedTime = newTime;
+            const target = newTime < earliestTime ? earliestTime : newTime;
+
+            // Samples land 10-30s after each 15-minute boundary, so stepping by
+            // wall clock can stop just short of a sample and leave the displayed
+            // time one slot ahead of the last point the charts draw. Land on a
+            // real sample instead.
+            let snapped = this.snapToSample(target);
+
+            // A nearest-snap can round back onto the sample we started from
+            // (no visible movement); step one sample in the travel direction.
+            if (snapped.getTime() === this.selectedTime.getTime()) {
+                const idx = TimeNavigator.upperBound(energyData, this.selectedTime) - 1;
+                const nextIdx = minutes > 0 ? idx + 1 : idx - 1;
+                if (nextIdx >= 0 && nextIdx < energyData.length) {
+                    snapped = convertToPDT(energyData[nextIdx].LocalTimestamp);
+                } else if (minutes > 0) {
+                    this.goToLiveMode();
+                    return;
+                }
             }
+
+            this.selectedTime = snapped;
         }
 
         this.updateDisplay();
@@ -201,7 +218,9 @@ class TimeNavigator {
         const endOfDay = new Date(selectedDate);
         endOfDay.setHours(23, 59, 59, 999);
 
-        this.selectedTime = endOfDay > latestTime ? latestTime : endOfDay;
+        // 'floor' so the last sample of the chosen day wins over the first
+        // sample of the next one
+        this.selectedTime = this.snapToSample(endOfDay > latestTime ? latestTime : endOfDay, 'floor');
         this.isLiveMode = false;
         this.updateDisplay();
         this.notifyObservers();
@@ -309,6 +328,21 @@ class TimeNavigator {
     // Get the effective "current" time for data filtering
     getCurrentTime() {
         return this.isLiveMode ? new Date() : this.selectedTime;
+    }
+
+    // Move a wall-clock time onto an actual sample timestamp so the navigator
+    // label always names the newest point the charts draw. mode 'nearest' picks
+    // the closer neighbour; 'floor' never moves forward past `time`.
+    snapToSample(time, mode = 'nearest') {
+        if (!energyData || energyData.length === 0) return time;
+
+        const idx = TimeNavigator.upperBound(energyData, time); // first sample after `time`
+        const before = idx > 0 ? convertToPDT(energyData[idx - 1].LocalTimestamp) : null;
+        const after = idx < energyData.length ? convertToPDT(energyData[idx].LocalTimestamp) : null;
+
+        if (!before) return after || time;
+        if (!after || mode === 'floor') return before;
+        return (time - before) <= (after - time) ? before : after;
     }
 
     // Binary search: first index in sorted data whose timestamp is after `time`
