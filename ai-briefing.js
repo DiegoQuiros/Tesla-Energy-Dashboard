@@ -41,18 +41,26 @@ function formatAiBriefingDate(isoDate) {
     return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-function renderAiBriefingEntry(entry, isLatest) {
+// Both configured providers publish independently for the same day (see
+// AiBriefingManager.cs), so a day can carry up to two entries. Group by date
+// and show each provider's take side by side rather than picking one.
+const AI_BRIEFING_PROVIDER_LABELS = { 'azure-openai': 'OpenAI', 'gemini': 'Gemini' };
+const AI_BRIEFING_PROVIDER_COLORS = { 'azure-openai': '#6ab7ff', 'gemini': '#a78bfa' };
+const AI_BRIEFING_PROVIDER_ORDER = { 'azure-openai': 0, 'gemini': 1 };
+
+function renderAiBriefingEntry(entry) {
     const anomalies = (entry.Anomalies || []).filter(a => a && a.trim());
+    const color = AI_BRIEFING_PROVIDER_COLORS[entry.Provider] || '#6ab7ff';
+    const label = AI_BRIEFING_PROVIDER_LABELS[entry.Provider] || entry.Provider || '';
     return `
         <div class="automation-log-row">
             <div class="automation-log-row-head">
-                <span class="automation-log-badge" style="background:#6ab7ff1a; color:#6ab7ff; border-color:#6ab7ff55;">${isLatest ? 'Latest' : 'Earlier'}</span>
-                <span class="automation-log-target">${escapeAiBriefingHtml(formatAiBriefingDate(entry.Date))}</span>
+                <span class="automation-log-badge" style="background:${color}1a; color:${color}; border-color:${color}55;">${escapeAiBriefingHtml(label)}</span>
             </div>
             <div class="automation-log-reason">${escapeAiBriefingHtml(entry.Recap || '')}</div>
             ${anomalies.map(a => `<div class="automation-log-data">⚠️ ${escapeAiBriefingHtml(a)}</div>`).join('')}
             ${entry.Recommendation ? `<div class="automation-log-data">💡 ${escapeAiBriefingHtml(entry.Recommendation)}</div>` : ''}
-            ${isLatest && entry.Model ? `<div class="automation-log-data">via ${escapeAiBriefingHtml(entry.Model)}</div>` : ''}
+            ${entry.Model ? `<div class="automation-log-data">via ${escapeAiBriefingHtml(entry.Model)}</div>` : ''}
         </div>`;
 }
 
@@ -67,10 +75,21 @@ function renderAiBriefing(container, entries) {
         container.innerHTML = '<div style="color:#8a9bb5;">No briefing published yet — the first one arrives after the next midnight.</div>';
         return;
     }
-    // Blob is oldest-first; show newest first.
-    const sorted = entries.slice().sort((a, b) => String(b.Date || '').localeCompare(String(a.Date || '')));
-    const shown = sorted.slice(0, 1 + AI_BRIEFING_HISTORY_COUNT);
-    container.innerHTML = shown.map((e, i) => renderAiBriefingEntry(e, i === 0)).join('');
+    const byDate = new Map();
+    entries.forEach(e => {
+        const list = byDate.get(e.Date) || [];
+        list.push(e);
+        byDate.set(e.Date, list);
+    });
+    const dates = Array.from(byDate.keys()).sort((a, b) => String(b).localeCompare(String(a)));
+    const shownDates = dates.slice(0, 1 + AI_BRIEFING_HISTORY_COUNT);
+
+    container.innerHTML = shownDates.map(date => {
+        const dayEntries = byDate.get(date).slice()
+            .sort((a, b) => (AI_BRIEFING_PROVIDER_ORDER[a.Provider] ?? 9) - (AI_BRIEFING_PROVIDER_ORDER[b.Provider] ?? 9));
+        const header = `<div class="automation-log-target" style="margin:10px 0 2px;">${escapeAiBriefingHtml(formatAiBriefingDate(date))}</div>`;
+        return header + dayEntries.map(renderAiBriefingEntry).join('');
+    }).join('');
     container.dataset.populated = 'true';
 }
 

@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="vehicle.css">
     <link rel="stylesheet" href="time-navigator.css">
     <link rel="stylesheet" href="chart-collapse.css">
+    <link rel="stylesheet" href="ai-chat.css">
 </head>
 <body>
     <div class="container">
@@ -1110,6 +1111,19 @@
                     </div>
                 </div>
 
+                <!-- Ask the Dashboard — Semantic Kernel chat over the published blobs
+                     (AiChatServer.cs; ai-chat.js renders). Hidden when no API URL. -->
+                <div class="chart-container" id="aiChatContainer">
+                    <h3>💬 Ask the Dashboard</h3>
+                    <div id="aiChatMessages" class="ai-chat-messages">
+                        <div id="aiChatHint" class="ai-chat-hint">Loading…</div>
+                    </div>
+                    <div class="ai-chat-input-row">
+                        <textarea id="aiChatInput" placeholder="Ask about the house, the pack, the cars, the plan…"></textarea>
+                        <button id="aiChatSend">Send</button>
+                    </div>
+                </div>
+
                 <!-- Automation Log — actions taken by the unified energy controller -->
                 <div class="chart-container" id="automationLogContainer">
                     <h3>🤖 Automation Log</h3>
@@ -1134,6 +1148,7 @@
     <script src="chart-collapse.js"></script>
     <script src="automation-log.js"></script>
     <script src="ai-briefing.js"></script>
+    <script src="ai-chat.js"></script>
     <script src="card-height-sync.js"></script>
     <script src="main.js"></script>
 </body>

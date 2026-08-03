@@ -1,0 +1,113 @@
+/* "Ask the Dashboard" chat card (ai-chat.js). Follows the dashboard's dark
+   palette: same blues as .automation-log-* so the card doesn't stand apart. */
+
+.ai-chat-messages {
+    max-height: 320px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 4px 2px 10px 2px;
+}
+
+.ai-chat-messages::-webkit-scrollbar { width: 8px; }
+.ai-chat-messages::-webkit-scrollbar-thumb {
+    background: rgba(140, 170, 220, 0.35);
+    border-radius: 4px;
+}
+
+.ai-chat-bubble {
+    max-width: 88%;
+    padding: 8px 12px;
+    border-radius: 12px;
+    font-size: 0.92rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.ai-chat-bubble.user {
+    align-self: flex-end;
+    background: rgba(106, 183, 255, 0.16);
+    border: 1px solid rgba(106, 183, 255, 0.35);
+    color: #dbe9ff;
+}
+
+.ai-chat-bubble.assistant {
+    align-self: flex-start;
+    background: rgba(140, 170, 220, 0.10);
+    border: 1px solid rgba(140, 170, 220, 0.22);
+    color: #cfe0f5;
+}
+
+.ai-chat-bubble.error {
+    align-self: flex-start;
+    background: rgba(255, 93, 93, 0.12);
+    border: 1px solid rgba(255, 93, 93, 0.4);
+    color: #ffb3b3;
+}
+
+/* "checked: current status, weather" footer under an assistant reply */
+.ai-chat-tools {
+    font-size: 0.75rem;
+    color: #8a9bb5;
+    margin-top: 4px;
+}
+
+.ai-chat-hint {
+    color: #8a9bb5;
+    font-size: 0.88rem;
+}
+
+/* Clickable example questions shown before the first message */
+.ai-chat-example {
+    display: inline-block;
+    margin: 3px 6px 3px 0;
+    padding: 4px 10px;
+    border: 1px solid rgba(106, 183, 255, 0.35);
+    border-radius: 14px;
+    color: #9cc4f0;
+    font-size: 0.82rem;
+    cursor: pointer;
+    background: rgba(106, 183, 255, 0.07);
+}
+
+.ai-chat-example:hover { background: rgba(106, 183, 255, 0.18); }
+
+.ai-chat-input-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.ai-chat-input-row textarea {
+    flex: 1;
+    resize: none;
+    height: 44px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(140, 170, 220, 0.3);
+    background: rgba(10, 20, 40, 0.5);
+    color: #dbe9ff;
+    font-size: 0.92rem;
+    font-family: inherit;
+}
+
+.ai-chat-input-row textarea:focus {
+    outline: none;
+    border-color: rgba(106, 183, 255, 0.6);
+}
+
+.ai-chat-input-row button {
+    padding: 0 18px;
+    border-radius: 10px;
+    border: 1px solid rgba(106, 183, 255, 0.5);
+    background: rgba(106, 183, 255, 0.18);
+    color: #9cc4f0;
+    font-size: 0.92rem;
+    cursor: pointer;
+}
+
+.ai-chat-input-row button:hover:not(:disabled) { background: rgba(106, 183, 255, 0.3); }
+
+.ai-chat-input-row button:disabled { opacity: 0.45; cursor: default; }

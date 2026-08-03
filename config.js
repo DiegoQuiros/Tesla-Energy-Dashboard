@@ -13,6 +13,11 @@ const AUTOMATION_PLAN_URL = 'https://powermanagestorage.blob.core.windows.net/en
 const WEATHER_FORECAST_URL = 'https://powermanagestorage.blob.core.windows.net/energy-data/weather-forecast.json';
 // The LLM-written daily recap, published once per day by AiBriefingManager.cs.
 const AI_BRIEFING_URL = 'https://powermanagestorage.blob.core.windows.net/energy-data/ai-briefing.json';
+// "Ask the Dashboard" chat API (AiChatServer.cs running as a Container App).
+// Empty = card shows a "not configured" message on the public site. A dashboard
+// served from localhost falls back to http://localhost:8080 regardless (see
+// ai-chat.js), so local F5 testing needs no edit here.
+const AI_CHAT_API_URL = 'https://builder-2025-10-18.proudpond-8cd99d0a.westus2.azurecontainerapps.io';
 
 let energyData = [];
 let dailySummaryData = []; // Per-day kWh totals maintained by the collector job
