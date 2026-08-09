@@ -1462,13 +1462,13 @@ function createEnergyBalanceChart(todayData) {
     // still draws a legend swatch nobody can click into anything — drop it instead.
     const hasData = arr => arr.some(v => Math.abs(v || 0) > 0.005);
     const datasets = [
-        bar('Solar', round(totals.solar), ENERGY_BALANCE_COLORS.solar),
         bar('Grid In', round(totals.gridIn), ENERGY_BALANCE_COLORS.gridIn),
+        bar('Solar', round(totals.solar), ENERGY_BALANCE_COLORS.solar),
         bar('Powerwall Out', round(totals.pwOut), ENERGY_BALANCE_COLORS.pwOut),
         bar('Home', negate(totals.home), ENERGY_BALANCE_COLORS.home),
-        bar('Heat Pump', negate(totals.heatPump), ENERGY_BALANCE_COLORS.heatPump),
-        bar('Model 3', negate(totals.model3), ENERGY_BALANCE_COLORS.model3),
         bar('Model X', negate(totals.modelX), ENERGY_BALANCE_COLORS.modelX),
+        bar('Model 3', negate(totals.model3), ENERGY_BALANCE_COLORS.model3),
+        bar('Heat Pump', negate(totals.heatPump), ENERGY_BALANCE_COLORS.heatPump),
         bar('Exported', negate(totals.exported), ENERGY_BALANCE_COLORS.exported),
         bar('Powerwall In', negate(totals.pwIn), ENERGY_BALANCE_COLORS.pwIn)
     ].filter(d => hasData(d.data));

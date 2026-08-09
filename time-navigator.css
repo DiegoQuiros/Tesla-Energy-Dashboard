@@ -342,6 +342,18 @@
     }
 }
 
+/* A phone held in landscape (iPhone 16 Pro Max is 932x430) is wider than the
+   max-width breakpoint above, so it's missed by it and the navigator stays
+   visible — at that width its controls wrap to a second line, inflating
+   --topbar-h (card-height-sync.js) and shrinking every card below one
+   screenful. Same "phone landscape" height breakpoint used in
+   indexStyleSheet.css's short-viewport rules. */
+@media (max-height: 560px) {
+    .time-navigator-container {
+        display: none;
+    }
+}
+
 /* Extra small screens */
 @media (max-width: 480px) {
     .time-navigator-controls {
