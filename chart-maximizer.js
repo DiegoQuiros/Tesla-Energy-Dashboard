@@ -32,6 +32,12 @@ class ChartMaximizer {
             dailySolarBtn.addEventListener('click', () => this.toggleMaximize('dailySolarChartContainer', 'dailySolarChart'));
         }
 
+        // Generated vs. Consumed
+        const energyBalanceBtn = document.getElementById('energyBalanceMaximizeBtn');
+        if (energyBalanceBtn) {
+            energyBalanceBtn.addEventListener('click', () => this.toggleMaximize('energyBalanceChartContainer', 'energyBalanceChart'));
+        }
+
         // HVAC Chart
         const hvacBtn = document.getElementById('hvacMaximizeBtn');
         if (hvacBtn) {
@@ -111,9 +117,12 @@ class ChartMaximizer {
         this.originalParent.replaceChild(container, this.placeholder);
         this.placeholder = null;
 
-        // ✅ Restore original size
-        container.style.width = this.originalWidth + 'px';
-        container.style.height = this.originalHeight + 'px';
+        // Clear any inline sizing and let the stylesheet size the card again.
+        // Restoring the captured pixel size would freeze the card at whatever the
+        // viewport was when it got maximized, so it would stop tracking
+        // --card-height on the next resize / rotation.
+        container.style.width = '';
+        container.style.height = '';
 
         const button = container.querySelector('.close-btn');
         if (button) {
@@ -147,6 +156,9 @@ class ChartMaximizer {
                 break;
             case 'dailySolarChart':
                 chart = dailySolarChart;
+                break;
+            case 'energyBalanceChart':
+                chart = energyBalanceChart;
                 break;
             case 'hvacChart':
                 chart = hvacChart;

@@ -1004,6 +1004,21 @@
                     </div>
                 </div>
 
+                <!-- Generated vs. Consumed (hourly energy balance) -->
+                <div class="chart-container" id="energyBalanceChartContainer">
+                    <h3>
+                        ⚖️ Generated vs. Consumed
+                        <span class="solar-kwh-stats" id="energyBalanceStats"></span>
+                        <div class="chart-buttons">
+                            <button class="collapse-btn" id="energyBalanceCollapseBtn" title="Collapse chart">Collapse</button>
+                            <button class="maximize-btn" id="energyBalanceMaximizeBtn">Maximize</button>
+                        </div>
+                    </h3>
+                    <div class="chart-wrapper">
+                        <canvas id="energyBalanceChart"></canvas>
+                    </div>
+                </div>
+
                 <!-- Solar Production Chart -->
                 <div class="chart-container" id="solarChartContainer">
                     <h3>

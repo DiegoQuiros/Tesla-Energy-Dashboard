@@ -25,6 +25,7 @@ let solarChart = null;
 let batteryChart = null;
 let temperatureChart = null;
 let dailySolarChart = null;
+let energyBalanceChart = null;
 let hvacChart = null;
 let energyCreationChart = null;
 let energyUsageChart = null;

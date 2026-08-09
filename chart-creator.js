@@ -136,6 +136,7 @@ function createCharts() {
     createTemperatureChart(todayData);
     createSolarChart(todayData);
     createBatteryChart(todayData);
+    createEnergyBalanceChart(todayData);
 }
 
 function createDailySolarChart() {
@@ -1306,6 +1307,248 @@ function updateSolarKwhStats(todayData, dataSource, currentTime) {
     } else {
         statsEl.innerHTML = `<span class="kwh-value">${fmt(producedKwh)} kWh</span> so far`;
     }
+}
+
+// --- Generated vs. Consumed --------------------------------------------------
+// One bar per collector sample for the day on screen: where that sample's energy
+// came FROM stacked upward from zero, where it WENT stacked downward from zero, on
+// the same x position so each slot reads as one mirrored column. Both halves are
+// the same measured power integrated over the slot, so the small mismatch between
+// them is the Powerwall's round-trip and standby loss — the term the yearly flow
+// diagram calls "Losses". Slots the collector missed stay null: a gap in the bars,
+// never a bar borrowing its neighbour's interval.
+//
+// Colors are the ones the page already uses for each thing, so a bar segment and
+// the energy-flow scene / Sankey always mean the same device: solar yellow, grid
+// orange, Home purple, Model 3 pink, Model X blue, export cyan, heat-pump orange,
+// Powerwall green (one green for both directions — same device either way).
+const ENERGY_BALANCE_COLORS = {
+    solar: '#ffcc00',
+    gridIn: '#ff6b35',
+    pwOut: '#4dd08a',
+    home: '#7e57c2',
+    heatPump: '#ff8a5c',
+    model3: '#ec407a',
+    modelX: '#2196f3',
+    exported: '#26c6da',
+    pwIn: '#4dd08a'
+};
+
+// --- Splitting the household load into Home vs. Heat Pump --------------------
+// LoadPowerKw is one number for the whole house. The cars come out of it exactly
+// (measured V×A), but the heat pump has no meter of its own, so the split has to
+// be inferred from the shape of the remainder.
+//
+// ThermostatIsActivelyRunning is NOT that signal: over the current data window it
+// reads false on a quarter of the samples whose remainder sits near 2 kW — the
+// Bryant simply doesn't report every running interval — which is why the heat pump
+// used to disappear from the middle of the afternoon.
+//
+// The remainder itself is cleanly bimodal instead. Binned at 0.1 kW it has a
+// house-only hump from 0.2 to 0.7 kW (peak 0.3–0.5), a near-empty valley around
+// 1.0 kW, and a heat-pump mass from 1.3 kW up. So:
+//   remainder below the valley -> the heat pump is off and it is all Home.
+//   remainder above the valley -> the heat pump is running; Home keeps its typical
+//                                 base draw and the rest is the pump.
+// HOME_BASE_KW is the median of the house-only hump, not a guess; brief appliance
+// spikes (toaster, microwave, vacuum) do land on the heat pump, which is the
+// deliberate trade for never hiding the pump.
+const HOME_ONLY_MAX_KW = 0.9;  // the valley between the two humps
+const HOME_BASE_KW = 0.45;     // median household draw with the heat pump off
+
+// Home never truly draws zero (fridge, standby loads, always-on electronics). A
+// handful of car-charging samples (~2% of them) have the car's own measured V×A
+// slightly outrun the whole-house meter's simultaneous sample — the two aren't
+// read at the exact same instant — which pushes the computed remainder to ~0 and
+// makes Home vanish from the chart for that slot. Floor it instead; the deficit
+// comes out of whichever consumer that slot is largest (heat pump, else the
+// cars), so the slot's total still matches the measured LoadPowerKw.
+const HOME_MIN_KW = 0.2; // the low end of the range Diego has observed live
+
+// Household load minus the cars, split into { home, heatPump } kW.
+function splitHouseLoadKw(loadKw, carsKw) {
+    const remainder = Math.max(0, (loadKw || 0) - carsKw);
+    if (remainder <= HOME_ONLY_MAX_KW) return { home: remainder, heatPump: 0 };
+    return { home: HOME_BASE_KW, heatPump: remainder - HOME_BASE_KW };
+}
+
+// One entry per slot of the canonical day grid (see mapDayToGrid): the sample
+// nearest that slot's clock time converted to kWh, or null where the collector has
+// no sample for it. Every slot covers the same DATA_INTERVAL_MINUTES, so the
+// conversion is one constant rather than a per-sample interval.
+function energyBalanceBySlot(dayData) {
+    const slots = mapDayToGrid(dayData);
+    const slotHours = DATA_INTERVAL_MINUTES / 60;
+    const series = {
+        solar: [], gridIn: [], pwOut: [],
+        home: [], heatPump: [], model3: [], modelX: [], exported: [], pwIn: []
+    };
+
+    for (const point of slots) {
+        if (!point) {
+            for (const key of Object.keys(series)) series[key].push(null);
+            continue;
+        }
+
+        // What each car actually pulled from the house (measured V×A — see
+        // homeChargingPowerKw); supercharging never crossed the house meter.
+        let m3Kw = point.Model3IsCharging ? homeChargingPowerKw(point, 'Model3') : 0;
+        let mxKw = point.ModelXIsCharging ? homeChargingPowerKw(point, 'ModelX') : 0;
+        const house = splitHouseLoadKw(point.LoadPowerKw, m3Kw + mxKw);
+
+        // Enforce the Home floor (see HOME_MIN_KW). Take the shortfall from the
+        // heat pump first since it's the larger, less certain estimate; only dip
+        // into the cars' measured draw if the heat pump alone can't cover it.
+        if (house.home < HOME_MIN_KW) {
+            let deficit = HOME_MIN_KW - house.home;
+            house.home = HOME_MIN_KW;
+            const fromHp = Math.min(deficit, house.heatPump);
+            house.heatPump -= fromHp;
+            deficit -= fromHp;
+            if (deficit > 0) {
+                const carsKw = m3Kw + mxKw;
+                if (carsKw > 0) {
+                    const scale = Math.max(0, 1 - deficit / carsKw);
+                    m3Kw *= scale;
+                    mxKw *= scale;
+                }
+            }
+        }
+
+        const gridKw = point.GridPowerKw || 0;       // + importing, - exporting
+        const batteryKw = point.BatteryPowerKw || 0; // + discharging, - charging
+
+        series.solar.push(Math.max(0, point.SolarPowerKw || 0) * slotHours);
+        series.gridIn.push(Math.max(0, gridKw) * slotHours);
+        series.pwOut.push(Math.max(0, batteryKw) * slotHours);
+        series.home.push(house.home * slotHours);
+        series.heatPump.push(house.heatPump * slotHours);
+        series.model3.push(m3Kw * slotHours);
+        series.modelX.push(mxKw * slotHours);
+        series.exported.push(Math.max(0, -gridKw) * slotHours);
+        series.pwIn.push(Math.max(0, -batteryKw) * slotHours);
+    }
+
+    return series;
+}
+
+function createEnergyBalanceChart(todayData) {
+    const canvas = document.getElementById('energyBalanceChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    if (energyBalanceChart) {
+        energyBalanceChart.destroy();
+    }
+
+    const totals = energyBalanceBySlot(todayData);
+    // null must survive rounding — a missing slot draws no bar at all
+    const round = arr => arr.map(v => v === null ? null : Math.round(v * 1000) / 1000);
+    const negate = arr => arr.map(v => v === null ? null : -(Math.round(v * 1000) / 1000));
+
+    const bar = (label, data, color) => ({
+        label,
+        data,
+        backgroundColor: color,
+        borderColor: color,
+        borderWidth: 0,
+        // One stack for everything: Chart.js accumulates positives and negatives
+        // separately within a stack, so sources grow up and sinks grow down from
+        // the same x position instead of sitting side by side.
+        stack: 'balance'
+    });
+
+    // A dataset with nothing in it all day (e.g. Model X idle, nothing exported)
+    // still draws a legend swatch nobody can click into anything — drop it instead.
+    const hasData = arr => arr.some(v => Math.abs(v || 0) > 0.005);
+    const datasets = [
+        bar('Solar', round(totals.solar), ENERGY_BALANCE_COLORS.solar),
+        bar('Grid In', round(totals.gridIn), ENERGY_BALANCE_COLORS.gridIn),
+        bar('Powerwall Out', round(totals.pwOut), ENERGY_BALANCE_COLORS.pwOut),
+        bar('Home', negate(totals.home), ENERGY_BALANCE_COLORS.home),
+        bar('Heat Pump', negate(totals.heatPump), ENERGY_BALANCE_COLORS.heatPump),
+        bar('Model 3', negate(totals.model3), ENERGY_BALANCE_COLORS.model3),
+        bar('Model X', negate(totals.modelX), ENERGY_BALANCE_COLORS.modelX),
+        bar('Exported', negate(totals.exported), ENERGY_BALANCE_COLORS.exported),
+        bar('Powerwall In', negate(totals.pwIn), ENERGY_BALANCE_COLORS.pwIn)
+    ].filter(d => hasData(d.data));
+
+    updateEnergyBalanceStats(totals);
+
+    energyBalanceChart = new Chart(ctx, {
+        type: 'bar',
+        data: { labels: buildDayGridLabels(), datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: chartAnimation(),
+            interaction: { mode: 'index', intersect: false },
+            // Bars nearly touch, so a day reads as a profile and a missing slot
+            // shows up as a visible notch
+            datasets: { bar: { categoryPercentage: 0.95, barPercentage: 0.95 } },
+            plugins: {
+                legend: {
+                    labels: { color: '#ffffff', boxWidth: 12 }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: context => {
+                            const value = context.parsed.y;
+                            const kwh = Math.abs(value || 0);
+                            if (kwh < 0.005) return null; // hide this slot's untouched sources/sinks
+                            const side = value > 0 ? 'generated' : 'used';
+                            return `${context.dataset.label}: ${kwh.toFixed(2)} kWh ${side}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    stacked: true,
+                    ticks: { color: '#888', maxTicksLimit: 12 },
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                },
+                y: {
+                    stacked: true,
+                    ticks: {
+                        color: '#888',
+                        callback: value => `${Math.abs(value).toFixed(2)} kWh`
+                    },
+                    grid: {
+                        // Brighten the zero line: it's the axis the two halves mirror across
+                        color: context => context.tick.value === 0
+                            ? 'rgba(255, 255, 255, 0.35)'
+                            : 'rgba(255, 255, 255, 0.1)'
+                    }
+                }
+            }
+        }
+    });
+}
+
+// "X kWh generated • Y kWh used" summary in the card header, plus the share of
+// consumption that came from the house's own solar rather than the grid.
+function updateEnergyBalanceStats(totals) {
+    const statsEl = document.getElementById('energyBalanceStats');
+    if (!statsEl) return;
+
+    const sum = arr => arr.reduce((a, b) => a + (b || 0), 0);
+    const generated = sum(totals.solar) + sum(totals.gridIn) + sum(totals.pwOut);
+    const consumed = sum(totals.home) + sum(totals.heatPump) + sum(totals.model3) +
+        sum(totals.modelX) + sum(totals.exported) + sum(totals.pwIn);
+    const gridIn = sum(totals.gridIn);
+
+    if (generated <= 0) {
+        statsEl.textContent = '';
+        return;
+    }
+
+    const fmt = kwh => (Math.round(kwh * 10) / 10).toFixed(1);
+    const selfSupplied = Math.max(0, Math.min(100, (generated - gridIn) / generated * 100));
+    statsEl.innerHTML =
+        `<span class="kwh-value">${fmt(generated)} kWh</span> generated &nbsp;•&nbsp; ` +
+        `<span class="kwh-value">${fmt(consumed)} kWh</span> used &nbsp;•&nbsp; ` +
+        `<span class="kwh-value">${selfSupplied.toFixed(0)}%</span> without the grid`;
 }
 
 // --- Automation decision icons (battery chart) -------------------------------

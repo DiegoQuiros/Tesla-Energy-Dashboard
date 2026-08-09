@@ -30,6 +30,12 @@ class ChartCollapser {
             dailySolarBtn.addEventListener('click', () => this.toggleCollapse('dailySolarChartContainer'));
         }
 
+        // Generated vs. Consumed
+        const energyBalanceBtn = document.getElementById('energyBalanceCollapseBtn');
+        if (energyBalanceBtn) {
+            energyBalanceBtn.addEventListener('click', () => this.toggleCollapse('energyBalanceChartContainer'));
+        }
+
         const hvacBtn = document.getElementById('hvacCollapseBtn');
         if (hvacBtn) {
             hvacBtn.addEventListener('click', () => this.toggleCollapse('hvacChartContainer'));
@@ -128,6 +134,9 @@ class ChartCollapser {
                 break;
             case 'dailySolarChart':
                 chart = dailySolarChart;
+                break;
+            case 'energyBalanceChart':
+                chart = energyBalanceChart;
                 break;
             case 'hvacChart':
                 chart = hvacChart;

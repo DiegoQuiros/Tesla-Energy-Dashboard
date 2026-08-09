@@ -4,6 +4,54 @@
     box-sizing: border-box;
 }
 
+/* ============================================================
+   One card per screen.
+
+   The page is a stack of cards, each exactly as tall as the
+   visible area below the fixed top band (time navigator + the
+   "last updated" pill), so scrolling flips one full-screen card
+   at a time. --topbar-h is measured at runtime by
+   card-height-sync.js; the value here is only the pre-measure
+   fallback.
+
+   svh (not dvh) so the card height does NOT change as iOS
+   Safari's URL bar collapses — a changing card height would
+   fight scroll-snap and make the page jitter mid-scroll.
+   ============================================================ */
+:root {
+    --topbar-h: 30px;
+    --card-gap: 8px;
+    --page-pad-x: 8px;
+    --card-height: calc(100vh - var(--topbar-h) - var(--card-gap));
+}
+
+@supports (height: 100svh) {
+    :root {
+        --card-height: calc(100svh - var(--topbar-h) - var(--card-gap));
+    }
+}
+
+html {
+    /* Snapped cards land just under the fixed top band, not under it */
+    scroll-padding-top: var(--topbar-h);
+}
+
+/* Opaque backdrop spanning the full band width. The navigator (centered,
+   fit-content) and the last-updated pill (left) only cover part of the band,
+   so without this the previous card's bottom edge (e.g. a chart's x-axis)
+   shows through on either side as the page snaps to the next card. */
+body::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: var(--topbar-h);
+    background: linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 100%);
+    z-index: 998;
+    pointer-events: none;
+}
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background: linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 100%);
@@ -12,15 +60,18 @@ body {
 }
 
 .container {
-    max-width: 1200px;
+    max-width: none;
     margin: 0 auto;
-    padding: 20px;
+    /* Top padding stands in for the fixed top band (the navigator no longer
+       takes flow space), so the first card starts below it. */
+    padding: var(--topbar-h) var(--page-pad-x) var(--card-gap);
 }
 
 /* Mobile-first design for iPhone 16 Pro Max */
 @media (max-width: 768px) {
-    .container {
-        padding: 15px;
+    :root {
+        --page-pad-x: 6px;
+        --card-gap: 6px;
     }
 }
 
@@ -145,8 +196,8 @@ body {
 .hvac-stats {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: 8px;
-    margin: 12px 0 4px;
+    gap: 6px;
+    margin: 0 0 8px;
 }
 
 .hvac-stat {
@@ -155,7 +206,7 @@ body {
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 6px;
-    padding: 6px 10px;
+    padding: 4px 9px;
 }
 
 .hvac-stat-label {
@@ -183,8 +234,8 @@ body {
 .weather-current {
     display: flex;
     align-items: center;
-    gap: 25px;
-    margin-bottom: 20px;
+    gap: 18px;
+    margin-bottom: 8px;
 }
 
 /* 16-day forecast: temperature-range and solar-potential charts side by side,
@@ -219,19 +270,19 @@ body {
 .forecast-chart-title {
     font-weight: bold;
     color: #87ceeb;
-    margin: 14px 0 6px;
+    margin: 4px 0 4px;
     flex-shrink: 0;
 }
 
 .forecast-chart-wrapper {
     position: relative;
     flex: 1 1 auto;
-    min-height: 220px;
+    min-height: 160px;
 }
 
 
 .weather-temp {
-    font-size: 3rem;
+    font-size: 2.4rem;
     font-weight: bold;
     color: #87ceeb;
 }
@@ -244,9 +295,9 @@ body {
 
 .chart-container {
     background: linear-gradient(145deg, #1e1e1e, #2a2a2a);
-    border-radius: 20px;
-    padding: 30px;
-    margin-bottom: 30px;
+    border-radius: 14px;
+    padding: 10px 14px 12px;
+    margin-bottom: var(--card-gap);
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
     border: 1px solid rgba(255, 255, 255, 0.1);
     position: relative;
@@ -254,12 +305,14 @@ body {
 
     .chart-container h3 {
         color: #ff6b35;
-        font-size: 1.5rem;
-        margin-bottom: 20px;
+        font-size: 1.2rem;
+        margin-bottom: 6px;
         text-align: center;
         display: flex;
         justify-content: space-between;
         align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
     }
 
 .solar-kwh-stats {
@@ -275,22 +328,22 @@ body {
 
 /* Year-at-a-glance stat tiles above the Daily Solar Production chart */
 .solar-year-summary {
-    margin: 4px 0 24px;
+    margin: 0 0 10px;
 }
 
 .solar-year-summary .summary-caption {
     text-align: center;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     font-weight: normal;
     color: #8a9bb5;
-    margin-bottom: 16px;
+    margin-bottom: 8px;
 }
 
 .energy-stat-grid {
     display: grid;
     /* Phones: two tiles per row */
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
+    gap: 8px;
 }
 
 /* Tablet: three per row */
@@ -334,7 +387,7 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-left: 4px solid #6b7688;
     border-radius: 10px;
-    padding: 14px 16px;
+    padding: 8px 12px;
 }
 
 .energy-stat-label {
@@ -471,13 +524,14 @@ body {
     position: fixed;
     top: 0;
     left: 0;
-    width: 100vw;
+    width: 100%;
     height: 100vh;
-    z-index: 1000;
+    /* Above the fixed top band (navigator z-index 1000 / timestamp 999) */
+    z-index: 1200;
     background: linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 100%);
     margin: 0;
     border-radius: 0;
-    padding: 20px;
+    padding: 10px 14px;
     box-shadow: none;
     display: flex;
     flex-direction: column;
@@ -486,9 +540,15 @@ body {
     overflow-y: auto;
 }
 
+@supports (height: 100svh) {
+    .chart-maximized {
+        height: 100svh;
+    }
+}
+
     .chart-maximized h3 {
-        font-size: 2rem;
-        margin-bottom: 10px;
+        font-size: 1.4rem;
+        margin-bottom: 6px;
         color: #ff6b35;
         text-align: center;
         display: flex;
@@ -497,10 +557,10 @@ body {
     }
 
     .chart-maximized .chart-wrapper {
-        flex: 1;
+        flex: 1 1 auto;
         height: auto;
-        min-height: calc(100vh - 160px);
-        max-height: calc(100vh - 160px);
+        min-height: 0;
+        max-height: none;
     }
 
 /* Close button for maximized state */
@@ -531,17 +591,12 @@ body {
 /* Responsive adjustments for maximized charts */
 @media (max-width: 768px) {
     .chart-maximized {
-        padding: 15px;
+        padding: 8px 10px;
     }
 
         .chart-maximized h3 {
-            font-size: 1.5rem;
-            margin-bottom: 20px;
-        }
-
-        .chart-maximized .chart-wrapper {
-            min-height: calc(100vh - 140px);
-            max-height: calc(100vh - 140px);
+            font-size: 1.05rem;
+            margin-bottom: 5px;
         }
 }
 
@@ -618,18 +673,8 @@ body {
 
 /* Responsive design for ultrawide monitors */
 @media (min-width: 1400px) {
-    .container {
-        max-width: 1600px;
-    }
-
     .status-cards {
         grid-template-columns: repeat(4, 1fr);
-    }
-
-    .charts-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 30px;
     }
 }
 
@@ -643,10 +688,15 @@ body {
    Energy Flow Section  (house-scene redesign)
    ============================================================ */
 .energy-flow-section {
-    margin-bottom: 40px;
+    /* Same one-screenful sizing as every chart card */
+    height: var(--card-height);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    margin-bottom: var(--card-gap);
     background: linear-gradient(145deg, #1e1e1e, #2a2a2a);
-    border-radius: 20px;
-    padding: 26px 30px 12px;
+    border-radius: 14px;
+    padding: 10px 14px 12px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
@@ -656,7 +706,8 @@ body {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    margin-bottom: 18px;
+    flex-shrink: 0;
+    margin-bottom: 6px;
     background: none;
     -webkit-background-clip: border-box;
     background-clip: border-box;
@@ -679,36 +730,53 @@ body {
         }
 
     .energy-flow-section .last-updated {
-        /* Fixed to the viewport (not the section) so it stays visible while scrolling.
-           Anchored bottom-right: the time-navigator sticky bar owns the top of the
-           viewport in both its expanded and collapsed states, so bottom is the one
-           corner that's never contested. */
+        /* Lives in the fixed top band, left-hand end. It used to float bottom-right,
+           where it sat on top of the charts' x-axis labels — now that every card is
+           a full screenful, the bottom edge of a card carries its axis labels and no
+           overlay may live there. The band is reserved page space (see --topbar-h),
+           so nothing scrolls under this. */
         position: fixed;
-        bottom: 16px;
-        right: 16px;
-        z-index: 900;
+        top: 4px;
+        left: 10px;
+        z-index: 999;
+        max-width: 42vw;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
         color: #7c8aa5;
-        font-size: 0.82rem;
+        font-size: 0.72rem;
         font-weight: 500;
+        line-height: 1.3;
         background: rgba(10, 14, 22, 0.75);
-        padding: 6px 14px;
-        border-radius: 20px;
+        padding: 4px 11px;
+        border-radius: 14px;
         border: 1px solid rgba(255, 255, 255, 0.08);
         box-shadow: 0 4px 15px rgba(0, 0, 0, 0.35);
         backdrop-filter: blur(6px);
     }
 
-/* Responsive stage: laid out in a fixed 1100x600 space, scaled to fit its container */
+/* The pill never moves — the band is one row tall and the cards are sized to it,
+   so pushing the pill down would shrink every chart on the page. On a wide screen
+   the expanded navigator is centered with room to spare and the two coexist.
+   Only when the viewport is too narrow for both does the pill step aside, and
+   card-height-sync.js sets this class from the measured geometry rather than a
+   guessed breakpoint (the navigator is fit-content, so its width varies).
+   visibility (not display) so it keeps a layout box and stays measurable —
+   otherwise it would measure zero, test as "not colliding", and flap back. */
+.last-updated.band-crowded {
+    visibility: hidden;
+}
+
+/* Responsive stage: laid out in a fixed 1210x600 space, scaled (by
+   scaleFlowStage in energy-flow-charts.js) to fit whatever box it gets.
+   Here it just takes all the height the card has left over. */
 .energy-flow-section .flow-visualization {
     position: relative;
     width: 100%;
-    aspect-ratio: 11 / 5.6;
-    /* Never let the card grow past the viewport: cap the scene height, leaving
-       room for the time navigator, card header/padding and page padding. */
-    max-height: calc(100vh - 190px);
-    min-height: 280px;
+    flex: 1 1 auto;
+    min-height: 0;
     overflow: hidden;
-    margin-bottom: 12px;
+    margin-bottom: 0;
     background: radial-gradient(125% 135% at 50% 16%, #26324f 0%, #172339 46%, #0a1120 100%);
     border-radius: 18px;
     border: 1px solid rgba(255, 255, 255, 0.06);
@@ -929,16 +997,13 @@ body {
     display: block;
 }
 
-/* Stretch each chart container to full viewport width and center it */
+/* The page container is already full-bleed (max-width: none), so cards just fill
+   it — no viewport-width breakout, which would add a horizontal scrollbar. */
 .charts-grid .chart-container {
-    width: 95vw;
-    margin-left: calc(50% - 47vw); /* center full-viewport element inside centered .container */    
-    border-radius: 0; /* optional: remove rounded corners so background spans edge-to-edge */
-    padding-left: 30px;
-    padding-right: 30px;
-    box-shadow: none; /* optional: remove outer shadow for edge-to-edge look */
-    margin-bottom: 30px;
+    width: auto;
+    margin-left: 0;
     max-width: none;
+    box-shadow: none;
 }
 
 /* Ensure chart area uses full width inside the container */
@@ -946,13 +1011,12 @@ body {
     width: 100%;
 }
 
-/* Match every card's height to the Energy Flow hero card (--card-height, set
-   by card-height-sync.js) so scroll-snapping between cards feels like flipping
-   full-height pages. The alerts banner is excluded — it only ever holds a
+/* Every card is exactly one screenful tall (--card-height), so scrolling flips
+   one card at a time. The alerts banner is excluded — it only ever holds a
    couple of short warnings and would look empty stretched full-height, and
    collapsed charts are excluded so they can still shrink to their header. */
 .charts-grid .chart-container:not(.chart-collapsed):not(.automation-alerts-card) {
-    height: var(--card-height, auto);
+    height: var(--card-height);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -978,19 +1042,159 @@ body {
 
     /* Non-chart content areas scroll internally instead of overflowing the card */
     .charts-grid .chart-container:not(.chart-collapsed):not(.automation-alerts-card) .energy-flow-diagram,
-    .charts-grid .chart-container:not(.chart-collapsed):not(.automation-alerts-card) #weatherForecast,
-    .charts-grid .chart-container:not(.chart-collapsed):not(.automation-alerts-card) .automation-log-body {
+    .charts-grid .chart-container:not(.chart-collapsed):not(.automation-alerts-card) #weatherForecast {
         flex: 1 1 auto;
         min-height: 0;
         overflow-y: hidden;
     }
 
+    /* The automation log actually needs to scroll past a screenful, unlike the
+       two areas above — same flex sizing, but overflow-y stays auto (its own
+       rule below) instead of being forced hidden. */
+    .charts-grid .chart-container:not(.chart-collapsed):not(.automation-alerts-card) .automation-log-body {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+
 /* Keep better spacing on small screens */
 @media (max-width: 768px) {
-    .charts-grid .chart-container {
-        padding-left: 15px;
-        padding-right: 15px;
-        margin-left: calc(50% - 50vw);
+    .chart-container,
+    .energy-flow-section {
+        padding: 8px 10px 10px;
+        border-radius: 12px;
+    }
+
+    .chart-container h3 {
+        font-size: 1rem;
+        margin-bottom: 5px;
+        gap: 8px;
+    }
+
+    /* The house scene is a wide (roughly 2:1) drawing, so on a tall narrow phone
+       it can only ever be as tall as its width allows — stretching its panel to
+       the full card height would just leave a big empty gradient box under it.
+       Cap the panel at the scene's own proportions and center it in the card
+       instead, so the leftover height reads as card padding. */
+    .energy-flow-section .flow-visualization {
+        flex: 0 1 auto;
+        aspect-ratio: 11 / 5.6;
+        max-height: 100%;
+        margin: auto 0;
+    }
+}
+
+/* ============================================================
+   Short viewports (a phone held in landscape — iPhone 16 Pro Max
+   is 932x430 there, so the width-based mobile rules above do NOT
+   apply and height is what's scarce). Everything that isn't the
+   chart itself gets trimmed so the plot keeps the bulk of the
+   ~380px a card has to work with.
+   ============================================================ */
+@media (max-height: 560px) {
+    :root {
+        --card-gap: 6px;
+        --page-pad-x: 6px;
+    }
+
+    .chart-container,
+    .energy-flow-section {
+        padding: 6px 10px 8px;
+        border-radius: 12px;
+    }
+
+        .chart-container h3 {
+            font-size: 1rem;
+            margin-bottom: 4px;
+        }
+
+        .energy-flow-section h2 {
+            font-size: 1rem;
+        }
+
+    .energy-flow-section .header {
+        margin-bottom: 4px;
+    }
+
+    .collapse-btn,
+    .maximize-btn,
+    .day-toggle-btn,
+    .close-btn {
+        padding: 4px 9px;
+        font-size: 0.78rem;
+    }
+
+    /* Stat blocks above charts: same information, less vertical furniture */
+    .solar-year-summary {
+        margin-bottom: 6px;
+    }
+
+        .solar-year-summary .summary-caption {
+            display: none;
+        }
+
+    .energy-stat {
+        padding: 4px 10px;
+    }
+
+    .energy-stat-value {
+        font-size: 1.2rem;
+        margin-top: 2px;
+    }
+
+    .energy-stat.hero .energy-stat-value {
+        font-size: 1.4rem;
+    }
+
+    .energy-stat-sub {
+        margin-top: 2px;
+    }
+
+    .hvac-stats {
+        margin-bottom: 6px;
+    }
+
+    .hvac-stat {
+        padding: 2px 8px;
+    }
+
+    .hvac-stat-value {
+        font-size: 0.85rem;
+    }
+
+    .weather-current {
+        gap: 12px;
+        margin-bottom: 4px;
+    }
+
+    .weather-temp {
+        font-size: 1.8rem;
+    }
+
+    .weather-condition {
+        margin-top: 4px;
+    }
+
+    .forecast-chart-title {
+        font-size: 0.85rem;
+        margin: 2px 0;
+    }
+
+    .forecast-chart-wrapper {
+        min-height: 0;
+    }
+
+    .flow-caption {
+        margin: 0 0 6px;
+    }
+}
+
+/* Wide but short (landscape phone): put the five year-summary tiles on one row.
+   On a 430px-tall viewport a second row of tiles costs the Daily Solar chart
+   about a third of its height. */
+@media (max-height: 560px) and (min-width: 760px) {
+    .energy-stat-grid {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 6px;
     }
 }
 
@@ -1028,29 +1232,27 @@ body {
 }
 
 /* ============================================================
-   Desktop scroll snapping: scrolling centers the next/previous
-   card vertically in the viewport. Desktop-only (mouse/trackpad
-   on a wide screen) so phones keep free scrolling. Cards taller
-   than the viewport can still be scrolled through freely.
+   Scroll snapping (all screen sizes, phones included): each
+   scroll lands the next card's top edge right below the fixed
+   top band, and since a card is exactly one screenful tall,
+   you see exactly one card at a time.
    ============================================================ */
-@media (min-width: 769px) and (pointer: fine) {
-    html {
-        scroll-snap-type: y mandatory;
-    }
+html {
+    scroll-snap-type: y mandatory;
+}
 
-    .energy-flow-section,
-    .charts-grid .chart-container {
-        scroll-snap-align: center;
-        /* Stop at every card instead of skipping past on a fast scroll */
-        scroll-snap-stop: always;
-    }
+.energy-flow-section,
+.charts-grid .chart-container {
+    scroll-snap-align: start;
+    /* Stop at every card instead of skipping past on a fast scroll */
+    scroll-snap-stop: always;
+}
 
-    /* A maximized chart is a fixed overlay with its own scroller;
-       snapping inside it would fight the close/scroll behavior */
-    .chart-maximized {
-        scroll-snap-align: none;
-        scroll-snap-type: none;
-    }
+/* A maximized chart is a fixed overlay with its own scroller;
+   snapping inside it would fight the close/scroll behavior */
+.chart-maximized {
+    scroll-snap-align: none;
+    scroll-snap-type: none;
 }
 
 /* ── Automation Log card ─────────────────────────────────────────────── */

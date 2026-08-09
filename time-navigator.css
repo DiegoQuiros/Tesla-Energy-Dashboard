@@ -1,7 +1,12 @@
 /* Time Navigator Styles */
+/* Fixed (not sticky) so it takes no flow space of its own: the band it occupies
+   is reserved by .container's top padding (--topbar-h), which lets every card be
+   sized to exactly the remaining visible height. */
 .time-navigator-container {
-    position: sticky;
+    position: fixed;
     top: 0;
+    left: 50%;
+    transform: translateX(-50%);
     z-index: 1000;
     background: linear-gradient(145deg, #1a1a1a, #2d2d2d);
     border-radius: 0 0 8px 8px;
@@ -10,7 +15,7 @@
     width: fit-content;
     max-width: 100%;
     box-sizing: border-box;
-    margin: 0 auto 6px auto;
+    margin: 0;
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
     border: 1px solid rgba(255, 255, 255, 0.1);
     backdrop-filter: blur(10px);
@@ -131,7 +136,11 @@
     border: none;
     backdrop-filter: none;
     padding: 3px 8px;
-    /* Full width again so the lone pill can float to the far right */
+    /* Full width again so the lone pill can float to the far right
+       (clear of the "last updated" pill at the band's left end) */
+    left: 0;
+    right: 0;
+    transform: none;
     width: 100%;
 }
 
