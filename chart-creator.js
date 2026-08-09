@@ -1,6 +1,7 @@
-// Skip chart animations while scrubbing through history so redraws feel instant
+// Skip chart animations everywhere (both scrubbing through history and live
+// mode) so redraws feel instant instead of bars animating in on every update
 function chartAnimation() {
-    return (window.timeNavigator && !window.timeNavigator.isInLiveMode()) ? false : undefined;
+    return false;
 }
 
 // Slice a sorted data array to [dayStart, dayEnd] using binary search

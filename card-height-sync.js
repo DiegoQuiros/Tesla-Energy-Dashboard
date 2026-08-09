@@ -5,7 +5,9 @@
 // and the "last updated" pill (left). Both are position:fixed, so they take no
 // flow space; .container reserves the band with an equal top padding and every
 // card is sized to `100svh - --topbar-h - --card-gap` (see indexStyleSheet.css),
-// which is what makes exactly one card fill the screen.
+// which is what makes exactly one card fill the screen. This file also publishes
+// --viewport-h, a JS-measured stand-in for 100svh on devices where that unit
+// doesn't actually equal the real visible height.
 //
 // The band is always ONE row: both elements share it and the height is the taller
 // of the two. That keeps --topbar-h small — growing it shrinks every card on the
@@ -20,6 +22,30 @@
     const observed = new WeakSet();
     const resizeObserver = 'ResizeObserver' in window ? new ResizeObserver(apply) : null;
     let lastPx = null;
+
+    // 100svh is supposed to be the real visible height, but some devices/orientations
+    // (observed on iPhone in landscape) don't actually shrink it to match — the card
+    // then falls short of the screen bottom by however far svh is off. Publish the
+    // JS-measured viewport height as a fallback --card-height can prefer instead.
+    // innerHeight, not visualViewport.height: this page has no pinch-zoom or
+    // persistent on-screen keyboard to need visualViewport's narrower definition,
+    // and innerHeight is the one that reliably matches the real rendered layout.
+    // Only updates on resize/orientationchange/load, never on scroll, so it can't
+    // reintroduce the URL-bar-collapse jitter 100svh was chosen to avoid. Each of
+    // those events re-measures and overwrites the property, so an occasional
+    // transient reading self-corrects on the next one rather than sticking.
+    function applyViewportHeight() {
+        document.documentElement.style.setProperty('--viewport-h', `${window.innerHeight}px`);
+    }
+    window.addEventListener('load', applyViewportHeight);
+    window.addEventListener('resize', applyViewportHeight);
+    window.addEventListener('orientationchange', applyViewportHeight);
+    applyViewportHeight();
+    // Script can run before the engine has settled on the page's final
+    // viewport (seen in testing: a synchronous read at parse time returned a
+    // stale value with no later resize/load event to correct it). One
+    // deferred re-check on the next macrotask catches that without polling.
+    setTimeout(applyViewportHeight, 0);
 
     function apply() {
         const navEl = document.getElementById('timeNavigator');

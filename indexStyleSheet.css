@@ -17,17 +17,25 @@
    svh (not dvh) so the card height does NOT change as iOS
    Safari's URL bar collapses — a changing card height would
    fight scroll-snap and make the page jitter mid-scroll.
+
+   --viewport-h is a JS-measured fallback (card-height-sync.js,
+   window.visualViewport.height on load/resize/orientationchange
+   only — never on scroll, so it can't reintroduce the URL-bar
+   jitter above) for devices where 100svh doesn't actually equal
+   the real visible height (observed on iPhone in landscape: the
+   card fell short of the screen bottom even with --topbar-h
+   correct). It wins via var()'s fallback ordering once JS sets it.
    ============================================================ */
 :root {
     --topbar-h: 30px;
     --card-gap: 8px;
     --page-pad-x: 8px;
-    --card-height: calc(100vh - var(--topbar-h) - var(--card-gap));
+    --card-height: calc(var(--viewport-h, 100vh) - var(--topbar-h) - var(--card-gap));
 }
 
 @supports (height: 100svh) {
     :root {
-        --card-height: calc(100svh - var(--topbar-h) - var(--card-gap));
+        --card-height: calc(var(--viewport-h, 100svh) - var(--topbar-h) - var(--card-gap));
     }
 }
 

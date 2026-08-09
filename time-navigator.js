@@ -69,12 +69,12 @@ class TimeNavigator {
     }
 
     bindEvents() {
-        document.getElementById('timeNavDayBack').addEventListener('click', () => this.stepTime(-1440));
+        document.getElementById('timeNavDayBack').addEventListener('click', () => this.stepDay(-1));
         document.getElementById('timeNavBack').addEventListener('click', () => this.stepTime(-this.timeStep));
         document.getElementById('timeNavBackFast').addEventListener('click', () => this.stepTime(-60));
         document.getElementById('timeNavForward').addEventListener('click', () => this.stepTime(this.timeStep));
         document.getElementById('timeNavForwardFast').addEventListener('click', () => this.stepTime(60));
-        document.getElementById('timeNavDayForward').addEventListener('click', () => this.stepTime(1440));
+        document.getElementById('timeNavDayForward').addEventListener('click', () => this.stepDay(1));
         document.getElementById('timeNavLive').addEventListener('click', () => this.goToLiveMode());
 
         // Collapse / expand the navigator
@@ -94,11 +94,15 @@ class TimeNavigator {
             switch (e.key) {
                 case 'ArrowLeft':
                     e.preventDefault();
-                    this.stepTime(e.shiftKey ? -60 : -this.timeStep);
+                    if (e.altKey) this.stepTime(-1440);
+                    else if (e.ctrlKey || e.metaKey) this.stepDay(-1);
+                    else this.stepTime(e.shiftKey ? -60 : -this.timeStep);
                     break;
                 case 'ArrowRight':
                     e.preventDefault();
-                    this.stepTime(e.shiftKey ? 60 : this.timeStep);
+                    if (e.altKey) this.stepTime(1440);
+                    else if (e.ctrlKey || e.metaKey) this.stepDay(1);
+                    else this.stepTime(e.shiftKey ? 60 : this.timeStep);
                     break;
                 case 'Escape':
                 case 'Home':
@@ -156,6 +160,30 @@ class TimeNavigator {
         this.notifyObservers();
     }
 
+    // Jump a whole calendar day back/forward, landing on that day's last
+    // available sample (not "24h from the current wall-clock time") so
+    // "-1 Day" from live mode lands on yesterday's final data point.
+    stepDay(direction) {
+        const referenceTime = this.isLiveMode ? this.getLatestDataTime() : this.selectedTime;
+        const targetDate = new Date(referenceTime);
+        targetDate.setDate(targetDate.getDate() + direction);
+        targetDate.setHours(23, 59, 59, 999);
+
+        const latestTime = this.getLatestDataTime();
+        if (targetDate > latestTime) {
+            this.goToLiveMode();
+            return;
+        }
+
+        const earliestTime = this.getEarliestDataTime();
+        const floored = targetDate < earliestTime ? earliestTime : targetDate;
+
+        this.selectedTime = this.snapToSample(floored, 'floor');
+        this.isLiveMode = false;
+        this.updateDisplay();
+        this.notifyObservers();
+    }
+
     goToLiveMode() {
         this.selectedTime = null;
         this.isLiveMode = true;
@@ -164,11 +192,14 @@ class TimeNavigator {
     }
 
     // Whether the navigator should start collapsed (small pill). Defaults to
-    // collapsed on first visit, then remembers the user's last choice.
+    // expanded on desktop-width viewports and collapsed on mobile (where the
+    // widget is hidden entirely below 768px anyway), then remembers the
+    // user's last choice once they've toggled it themselves.
     readCollapsedPref() {
         try {
             const stored = localStorage.getItem('timeNavCollapsed');
-            return stored === null ? true : stored === 'true';
+            if (stored !== null) return stored === 'true';
+            return window.innerWidth <= 768;
         } catch (e) {
             return true;
         }
