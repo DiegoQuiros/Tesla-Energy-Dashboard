@@ -919,6 +919,119 @@ function updateHvacStats(filteredData, dayData) {
     }
 }
 
+// Computes a per-time-of-day mean and standard deviation of solar power across the
+// last 30 days (whatever history the rolling energy-data blob still holds), excluding
+// the day currently shown on the chart. gridMinutes are minutes-since-6am, matching
+// the chart's own x-axis grid, so the returned arrays line up with it directly.
+// Narrower than a full ±1σ band reads better on this chart — midday std dev is wide
+// (cloud timing varies a lot day to day) and a full sigma swamped the actual lines.
+const HISTORICAL_BAND_STD_MULTIPLIER = 0.5;
+
+// A day only represents "standard" production if (a) it was mostly clear — cloud
+// passes create the up/down spikes that widened the band and dragged the mean down
+// — and (b) the Powerwall never sat full-and-idle while the sun was up. This system
+// is off-grid with nowhere to export surplus, so once the pack fills the inverter
+// throttles output down to match the house/car load; that curtailed reading isn't
+// the panels' real output and, since curtailment happens mainly on the sunniest
+// days, leaving it in systematically pulled the midday mean down below what a clear
+// day actually produces.
+function isStandardHistoricalDay(dayPoints) {
+    if (dayPoints.length === 0) return false;
+
+    const clearCount = dayPoints.filter(p => p.WeatherIsClearSky === true).length;
+    if (clearCount / dayPoints.length <= 0.5) return false;
+
+    const wasCurtailed = dayPoints.some(p =>
+        p.WeatherIsDaytime === true &&
+        (p.BatteryPercentage || 0) >= 99.5 &&
+        Math.abs(p.BatteryPowerKw || 0) < 0.3 &&
+        Math.abs(p.GridPowerKw || 0) < 0.5
+    );
+    return !wasCurtailed;
+}
+
+function computeHistoricalSolarBand(dataSource, currentTime, gridMinutes) {
+    const excludedDateStr = convertToPDT(currentTime).toDateString();
+
+    const byDay = new Map();
+    for (const point of dataSource) {
+        const dayKey = convertToPDT(point.LocalTimestamp).toDateString();
+        if (dayKey === excludedDateStr) continue;
+        if (!byDay.has(dayKey)) byDay.set(dayKey, []);
+        byDay.get(dayKey).push(point);
+    }
+
+    // Sort each day's points and drop exact-duplicate timestamps (the archive/live
+    // blob windows overlap, so a sample can appear twice for the same minute).
+    const days = Array.from(byDay.values())
+        .filter(isStandardHistoricalDay)
+        .map(rawPoints => rawPoints.map(point => {
+            const date = convertToPDT(point.LocalTimestamp);
+            return {
+                minutes: (date.getHours() - 6) * 60 + date.getMinutes(),
+                power: Math.max(0, point.SolarPowerKw || 0)
+            };
+        }))
+        .map(points => {
+        points.sort((a, b) => a.minutes - b.minutes);
+        const deduped = [];
+        for (const p of points) {
+            if (deduped.length === 0 || deduped[deduped.length - 1].minutes !== p.minutes) deduped.push(p);
+        }
+        return deduped;
+    });
+
+    // Interpolate a day's series at an arbitrary minute (data lands on 15-min
+    // boundaries; the chart grid is 5-min) so every day contributes a value at
+    // every grid slot instead of only the 1-in-3 slots that happen to have a raw
+    // sample within a small match tolerance — that was producing single-day
+    // "mean" spikes at the other two-thirds of the grid.
+    function powerAt(dayPoints, minute) {
+        if (dayPoints.length === 0) return null;
+        if (minute < dayPoints[0].minutes || minute > dayPoints[dayPoints.length - 1].minutes) return null;
+        for (let i = 0; i < dayPoints.length - 1; i++) {
+            if (minute <= dayPoints[i + 1].minutes) {
+                const span = dayPoints[i + 1].minutes - dayPoints[i].minutes;
+                const frac = span > 0 ? (minute - dayPoints[i].minutes) / span : 0;
+                return dayPoints[i].power * (1 - frac) + dayPoints[i + 1].power * frac;
+            }
+        }
+        return null;
+    }
+
+    const meanData = [];
+    const upperData = [];
+    const lowerData = [];
+
+    for (const minute of gridMinutes) {
+        const values = [];
+        for (const dayPoints of days) {
+            const v = powerAt(dayPoints, minute);
+            if (v !== null) values.push(v);
+        }
+
+        if (values.length === 0) {
+            meanData.push(null);
+            upperData.push(null);
+            lowerData.push(null);
+            continue;
+        }
+
+        const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
+        let std = 0;
+        if (values.length > 1) {
+            const variance = values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / (values.length - 1);
+            std = Math.sqrt(variance);
+        }
+
+        meanData.push(mean);
+        upperData.push(mean + std * HISTORICAL_BAND_STD_MULTIPLIER);
+        lowerData.push(Math.max(0, mean - std * HISTORICAL_BAND_STD_MULTIPLIER));
+    }
+
+    return { meanData, upperData, lowerData };
+}
+
 function createSolarChart(todayData) {
     const ctx = document.getElementById('solarChart').getContext('2d');
 
@@ -1003,6 +1116,31 @@ function createSolarChart(todayData) {
         return null; // No end point found
     }
 
+    // Same start/end detection, applied per-day across the 30-day historical window
+    // (excluding the day currently on the chart) and reduced to the widest span, so
+    // the x-axis can be widened to fit the historical band alongside today/yesterday.
+    function findHistoricalStartEndRange(dataSource, currentTime) {
+        const excludedDateStr = convertToPDT(currentTime).toDateString();
+        const byDay = new Map();
+        for (const point of dataSource) {
+            const dayKey = convertToPDT(point.LocalTimestamp).toDateString();
+            if (dayKey === excludedDateStr) continue;
+            if (!byDay.has(dayKey)) byDay.set(dayKey, []);
+            byDay.get(dayKey).push(point);
+        }
+
+        let minStart = null;
+        let maxEnd = null;
+        for (const dayPoints of byDay.values()) {
+            if (!isStandardHistoricalDay(dayPoints)) continue;
+            const start = findSolarStartPoint(dayPoints);
+            const end = findSolarEndPoint(dayPoints);
+            if (start !== null) minStart = (minStart === null) ? start : Math.min(minStart, start);
+            if (end !== null) maxEnd = (maxEnd === null) ? end : Math.max(maxEnd, end);
+        }
+        return { minStart, maxEnd };
+    }
+
     // Find start and end points for both datasets
     const todayStartPoint = findSolarStartPoint(allTodayData);
     const todayEndPoint = findSolarEndPoint(allTodayData);
@@ -1033,6 +1171,14 @@ function createSolarChart(todayData) {
     // Fallback to reasonable defaults if no meaningful points found
     if (chartStartMinute === null) chartStartMinute = 0; // 6:00 AM
     if (chartEndMinute === null) chartEndMinute = 14 * 60; // 8:00 PM
+
+    // Widen the window to cover the 30-day historical band too — seasonal drift means
+    // some of those days had sunrise/sunset outside today's/yesterday's own window, and
+    // without this the band gets truncated at the chart edges instead of tapering to 0.
+    const { minStart: historicalStartPoint, maxEnd: historicalEndPoint } =
+        findHistoricalStartEndRange(dataSource, currentTime);
+    if (historicalStartPoint !== null) chartStartMinute = Math.min(chartStartMinute, historicalStartPoint);
+    if (historicalEndPoint !== null) chartEndMinute = Math.max(chartEndMinute, historicalEndPoint);
 
     // Forecast solar for the rest of today from the automation plan's published
     // projection (the C# engine's produced-solar series — no client-side model),
@@ -1110,14 +1256,16 @@ function createSolarChart(todayData) {
 
     // Create time labels for the meaningful range (5-minute intervals)
     const timeLabels = [];
+    const gridMinutes = [];
     const todaySolarPowerData = [];
     const yesterdaySolarPowerData = [];
     const predictedSolarPowerData = [];
 
     for (let minute = Math.floor(chartStartMinute / 5) * 5; minute <= chartEndMinute; minute += 5) {
+        gridMinutes.push(minute);
         // Convert minutes back to time format
         const hour = Math.floor(minute / 60) + 6;
-        const min = minute % 60;
+        const min = ((minute % 60) + 60) % 60;
 
         // Handle negative hours (before 6am) and hours beyond 24
         let displayHour = hour;
@@ -1161,7 +1309,52 @@ function createSolarChart(todayData) {
         }
     }
 
-    const datasets = [{
+    // 30-day historical band: for each time-of-day slot on the chart's grid, gather
+    // that slot's solar power across every prior day still in the (30-day rolling)
+    // energyData blob, then plot mean ± 1 standard deviation. Excludes the day being
+    // viewed so a partial/in-progress day can't skew its own comparison band.
+    const { meanData: historicalMeanData, upperData: historicalUpperData, lowerData: historicalLowerData } =
+        computeHistoricalSolarBand(dataSource, currentTime, gridMinutes);
+
+    const datasets = [];
+
+    if (historicalUpperData.some(v => v !== null)) {
+        datasets.push({
+            label: '',
+            data: historicalLowerData,
+            borderColor: 'transparent',
+            backgroundColor: 'transparent',
+            pointRadius: 0,
+            fill: false,
+            spanGaps: true,
+            order: 10
+        });
+        datasets.push({
+            label: '30-Day Range (±0.5σ)',
+            data: historicalUpperData,
+            borderColor: 'transparent',
+            backgroundColor: 'rgba(100, 181, 246, 0.15)',
+            pointRadius: 0,
+            fill: '-1',
+            spanGaps: true,
+            order: 10
+        });
+        datasets.push({
+            label: '30-Day Average',
+            data: historicalMeanData,
+            borderColor: 'rgba(100, 181, 246, 0.8)',
+            backgroundColor: 'transparent',
+            borderDash: [4, 3],
+            pointRadius: 0,
+            borderWidth: 1.5,
+            fill: false,
+            tension: 0.4,
+            spanGaps: true,
+            order: 9
+        });
+    }
+
+    datasets.push({
         label: 'Today\'s Solar Production (kW)',
         data: todaySolarPowerData,
         borderColor: '#ffcc00',
@@ -1171,7 +1364,7 @@ function createSolarChart(todayData) {
         borderWidth: 2,
         pointRadius: 2,
         spanGaps: true
-    }];
+    });
 
     // Predicted solar for the rest of today, styled like the Powerwall forecast dots
     if (predictedPowerAt && predictedSolarPowerData.some(val => val !== null)) {
@@ -1194,6 +1387,7 @@ function createSolarChart(todayData) {
     if (yesterdayTimeData.length > 0) {
         datasets.push({
             label: 'Yesterday\'s Solar Production (kW)',
+            hidden: true,
             data: yesterdaySolarPowerData,
             borderColor: '#888888',
             backgroundColor: 'rgba(136, 136, 136, 0.1)',
@@ -1511,6 +1705,8 @@ function createEnergyBalanceChart(todayData) {
                 },
                 y: {
                     stacked: true,
+                    min: -2.50,
+                    max: 2.50,
                     ticks: {
                         color: '#888',
                         callback: value => `${Math.abs(value).toFixed(2)} kWh`

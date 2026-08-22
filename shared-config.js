@@ -131,6 +131,58 @@ const SHARED_CONFIG = {
         "HVAC_OVERNIGHT_KW_PER_F": 0.015,  // sustained kW of house load per °F of cool setpoint (or of outdoor temp)
         "HVAC_COOLING_GATE_F": 10,         // outdoor this far below the setpoint => heat pump idle => zero sensitivity
 
+        // ── Bedtime PULL-DOWN: what it costs to move the house to a new setpoint ──
+        // (2026-08-10). The constant above is the SUSTAINED rate — the trickle of extra
+        // cooling a warmer setpoint saves once the house is already sitting at it. It says
+        // nothing about the far bigger, one-off cost of CHANGING the temperature the house
+        // holds, and that omission is what made the chart's overnight forecast unusable on
+        // exactly the night it matters most.
+        //
+        // 2026-08-09 is the case: at 10 PM the house sat at 84 °F, Diego lowered the
+        // thermostat to 80 °F at 10:45, and the heat pump then ran essentially flat out
+        // until 2:15 AM pulling the structure down. Measured overnight house energy was
+        // 9.12 kWh against ~6.0 kWh on a night with no pull-down. The chart, which models
+        // house load purely as a 7-day per-slot average, projected ~0.9 kW through that
+        // window and said the pack would bottom out near 30% (21% once the new setpoint
+        // was visible). It reached 2.1%.
+        //
+        // MEASURED over the 18 clean nights since the thermostat feed began (2026-07-22 —
+        // the first night with per-slot indoor temperature AND cool setpoint recorded):
+        //   * overnight energy vs the bedtime gap (indoor − setpoint) correlates at
+        //     r = 0.77; nothing else comes close (mean overnight outdoor temp r = 0.25,
+        //     the day's high r = 0.01, the setpoint alone r = 0.30).
+        //   * three independent fits of the coefficient agree: a per-night OLS gives
+        //     0.75 kWh/°F (90% CI 0.25–0.93), a 5-parameter slot simulation grid-searched
+        //     on per-night energy gives 0.8–1.0 (leave-one-out MAE 0.46 kWh), and the
+        //     2026-08-09 night on its own gives 3.1 kWh / 4 °F = 0.78.
+        //   * physically it is the building's heat capacity divided by the heat pump's COP:
+        //     0.85 kWh electric ≈ 3 kWh thermal ≈ 10,000 BTU per °F, normal for this house.
+        // SWING_KW is how fast that energy is spent — the draw the compressor adds above
+        // the profile while it is pulling down, measured at ~1.0–1.5 kW and implying
+        // ~1.2 °F/h of travel (observed 2026-08-09: 84 → 79 °F in 3.5 h).
+        // DEADBAND_F discounts the first quarter degree: the thermostat reports whole °F,
+        // so a 1 °F indoor-vs-setpoint difference is often just rounding.
+        //
+        // The term is SYMMETRIC, by conservation of energy: raising the setpoint above the
+        // current indoor temperature lets the house absorb heat the heat pump would
+        // otherwise have had to remove, so it is worth the same kWh per °F as cooling it
+        // down costs. That is what makes the chart move when Diego raises the thermostat
+        // at bedtime, not only when he lowers it.
+        //
+        // Backtested end to end (see PredictPowerwallDay): the projected pre-dawn low
+        // scored at every 15-min cycle from 8 PM to 2 AM on all 19 nights, 475 forecasts.
+        // Overall MAE 3.99 → 3.93 pp; on the 2026-08-09 cycles after the setpoint change
+        // 5.86 → 2.89 pp and the worst single forecast 22.0 → 10.0 pp. A sustained
+        // setpoint term on top of this was tried at 0.02–0.07 kW/°F and made every bucket
+        // worse (MAE 3.93 → 4.18 at 0.02) — the pull-down carries the whole effect; do not
+        // add one back without re-running that sweep.
+        "HOUSE_THERMAL_KWH_PER_F": 0.85,   // house-load kWh to move the indoor temperature 1 °F
+        "HOUSE_THERMAL_DEADBAND_F": 0.25,  // ignore this much of the indoor-vs-setpoint gap (1 °F reporting resolution)
+        "HOUSE_HVAC_SWING_KW": 1.0,        // kW the heat pump adds above the profile while pulling down
+        "NIGHT_LOAD_MODEL_START_HOUR": 20, // the pull-down term applies from this hour ...
+        "NIGHT_LOAD_MODEL_END_HOUR": 8,    // ... until this one (the solar-free window it was fitted on)
+        "NIGHT_MAX_HOUSE_LOAD_KW": 2.4,    // ceiling on the adjusted overnight load (whole-house draw with the compressor flat out)
+
         // ── Overnight-low estimator + 10 PM night anchor (2026-07-25) ──
         // Diego's yesterday-delta method widened to N prior nights, and a one-shot
         // "set it at 10 PM and forget it" setpoint decision. Chosen by an exhaustive
