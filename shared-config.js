@@ -71,6 +71,28 @@ const SHARED_CONFIG = {
         // night-to-night HVAC variance, not bias.
         "POWERWALL_DISCHARGE_EFFICIENCY": 0.92, // AC kWh delivered per SOC kWh drained while discharging
         "POWERWALL_STANDBY_DRAIN_KW": 0.10,     // constant gateway/electronics overhead while discharging
+        // Temperature-matched house-load profile (ChargeAutomationManager.BuildDailyProfiles).
+        // The load profile used to be the flat mean of the last PROFILE_DAYS days, which silently
+        // assumes tonight is as hot as an average recent night. Now every past day in the pool is
+        // weighted by how close its daily-mean outdoor temperature was to today's (measured so far,
+        // then the 7-day per-slot reference + today's last-3-h anomaly carried forward):
+        // w = exp(-0.5 * (|dT| / ANALOG_TEMP_SIGMA_F)^2), so a day 3 F off keeps 61 %, 6 F off 14 %.
+        // Backtested 2026-07-21..09-10 (4,691 forecasts, every 15 min, scored to noon next day):
+        // MAE 13.00 -> 11.32 pp, within-5-pp 40.8 -> 44.6 %, overnight-low MAE 7.09 -> 5.75;
+        // untouched test half (08-12..09-10) 13.88 -> 10.97. SIGMA 2..4 all land within 0.4 pp;
+        // do not retune it on the same data. A day needs ANALOG_MIN_DAY_SAMPLES slots with an
+        // outdoor reading to count; with no eligible day the flat mean is used. Rejected by the
+        // same backtest (don't re-add): shrinking/decaying the weather scale toward 1 (+17 pp on
+        // the 09-06/07 storm), per-hour temperature regressions stacked on this (same physics).
+        "ANALOG_TEMP_SIGMA_F": 3,
+        "ANALOG_POOL_DAYS": 14,                 // how far back look-alike days are taken from (7 was the flat window; 14 measured 0.2 pp better)
+        "ANALOG_MIN_DAY_SAMPLES": 48,           // half a day of samples with an outdoor temperature
+        "TEMP_ANOMALY_HOURS": 3,                // today's temperature anomaly is the mean over this window and is carried forward
+        // Off-grid, a full pack curtails the array: the recorded solar is then the house load, not
+        // the sunshine. Samples with the pack at/above this are skipped when building the solar
+        // profile AND when judging today's weather against it (the two must match, or a clear
+        // full afternoon reads as clouds). The gateway reports no values between 98.5 and 100.
+        "FULL_PACK_PERCENT": 99.5,
 
         // How far past midnight the Battery Levels chart (and therefore the projection
         // the collector publishes in automation-plan.json) runs, so the overnight drain
