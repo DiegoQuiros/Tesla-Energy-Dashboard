@@ -255,7 +255,20 @@ const SHARED_CONFIG = {
         // more waste signal, so the third one is self-limiting and rarely reached; raise
         // COMFORT_MIN_F to 77 if you want the old 2-degree depth back.
         "COMFORT_BASE_F": 80,            // resting/night cool setpoint — day and night floor for normal operation
-        "COMFORT_MAX_F": 82,             // hottest (least cooling) allowed — the survival ceiling the step-ups climb to
+        "COMFORT_MAX_F": 82,             // hottest the NIGHT may get: the 10 PM anchor's ceiling and the cap on mid-night
+                                         // survival raises (Diego: sleeping cool matters most — see EVENING_MAX_F)
+
+        // ── Evening pre-shed (2026-09-25, Diego's routine automated) ──
+        // "I'd rather put up with the heat during the evening if that means I can lower the
+        // setpoint at 10 PM." From the solar crossover (pack discharging) at/after
+        // EVENING_SHED_START_HOUR until the 10 PM anchor, whenever the CONSERVATIVE estimate
+        // says a NIGHT_ANCHOR_SETPOINT_F night would end under the floor, the controller steps
+        // the setpoint up one degree per cycle toward EVENING_MAX_F — a separate, higher
+        // ceiling than COMFORT_MAX_F, so the evening can run hotter than the night is ever
+        // allowed to. The anchor then decides the night with the bedtime pull-down priced in
+        // (see MeasurePriorNightLowPercent), so a hot evening cannot trick it into 79.
+        "EVENING_MAX_F": 84,             // hottest the EVENING pre-shed may go (Diego: "82 or even 84")
+        "EVENING_SHED_START_HOUR": 16,   // earliest hour the pre-shed may act (the discharge gate makes the real time dynamic)
         "DRAIN_DEBOUNCE_CYCLES": 2,      // consecutive cycles of "below target AND discharging" before a reactive car stop (rejects a passing cloud)
         "MIN_CAR_KWH": 1,                // a car must be able to take at least this many kWh (headroom below its limit) to be worth starting
         "MIN_SOLAR_KW": 0.1,             // "solar is producing" threshold for allowing a car start (rule: never start with no solar)
@@ -306,6 +319,11 @@ const SHARED_CONFIG = {
         // 158/140 allowed) and costs only ~15 min on a morning ramp.
         "START_SURPLUS_MARGIN_KW": 0.5,
         "USER_LOCK_HOURS": 2,            // after a detected MANUAL car start/stop, the automation won't override it for this long
+        "USER_LIMIT_LOCK_HOURS": 24,     // after a detected MANUAL charge-limit change (a limit the automation did not command),
+                                         // the limit manager leaves that car's limit alone for this long — a limit is a deliberate
+                                         // setting (a trip tomorrow), not a passing action, so it outlives the 2h start/stop lock.
+                                         // Also seeded on the first observation after a deploy, so the limits the cars carry
+                                         // the day automation comes on are treated as Diego's and respected for a day.
         "AUTO_SETTLE_MINUTES": 30,       // minimum gap after one automated car action before the opposite one (let rates settle / don't instantly restart)
         "MAX_FAILED_ATTEMPTS_PER_DAY": 3,// give up a repeatedly-failing car command after this many tries in a Pacific day
         "LOG_MAX_ENTRIES": 1000,         // cap the automation-log.json ring buffer at this many newest entries
