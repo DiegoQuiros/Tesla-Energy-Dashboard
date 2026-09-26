@@ -2067,6 +2067,104 @@ const solarCrossoverPlugin = {
     }
 };
 
+// What goes inside each line badge: either `text` in the line's colour, or an
+// SVG glyph in a 24×24 box whose `body` is filled in the line's colour and
+// `cut` in the badge background.
+const LINE_BADGE_GLYPHS = {
+    'Powerwall': {
+        body: 'M7.5 2.5H16.5Q18.5 2.5 18.5 4.5V19.5Q18.5 21.5 16.5 21.5H7.5Q5.5 21.5 5.5 19.5V4.5Q5.5 2.5 7.5 2.5Z',
+        cut: 'M13 5.5L9 12.5H11.8L10.8 18.5L15 11H12.2Z'
+    },
+    'Model 3': { text: '3' },
+    'Model X': { text: 'X' }
+};
+const lineBadgePaths = {};
+function lineBadgePath(d) {
+    return lineBadgePaths[d] || (lineBadgePaths[d] = new Path2D(d));
+}
+
+// Badges identifying the Powerwall / Model 3 / Model X lines, drawn on each
+// line's last actual reading (where the solid line hands over to the forecast
+// dots). Badges that would overlap — e.g. Powerwall and Model X both near 84% —
+// are pushed apart vertically, with a short leader back to the true point.
+const lineBadgesPlugin = {
+    id: 'lineBadges',
+    afterDatasetsDraw(chart) {
+        const { ctx, chartArea } = chart;
+        const r = 11;
+        const badges = [];
+        chart.data.datasets.forEach((ds, i) => {
+            if (ds.dayGroup !== 'today' || ds.predictionFor || !chart.isDatasetVisible(i)) return;
+            const glyph = LINE_BADGE_GLYPHS[(ds.label || '').replace(' (Simulated)', '')];
+            if (!glyph) return;
+            const points = chart.getDatasetMeta(i).data;
+            for (let j = points.length - 1; j >= 0; j--) {
+                const p = points[j];
+                if (p && !p.skip && Number.isFinite(p.x) && Number.isFinite(p.y)) {
+                    badges.push({ glyph, color: ds.borderColor, px: p.x, py: p.y, y: p.y });
+                    break;
+                }
+            }
+        });
+        if (!badges.length) return;
+
+        // De-collide top to bottom, then shift the stack back up if it ran off the bottom
+        badges.sort((a, b) => a.py - b.py);
+        const gap = 2 * r + 2;
+        badges.forEach((b, k) => {
+            b.y = Math.max(b.py, chartArea.top + r);
+            if (k > 0 && Math.abs(b.px - badges[k - 1].px) < gap) {
+                b.y = Math.max(b.y, badges[k - 1].y + gap);
+            }
+        });
+        const overflow = badges[badges.length - 1].y - (chartArea.bottom - r);
+        if (overflow > 0) badges.forEach(b => { b.y -= overflow; });
+
+        ctx.save();
+        // Leaders first so none crosses over a neighbouring badge
+        for (const b of badges) {
+            if (Math.abs(b.y - b.py) <= 2) continue;
+            ctx.strokeStyle = b.color;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(b.px, b.py);
+            ctx.lineTo(b.px, b.y);
+            ctx.stroke();
+        }
+        for (const b of badges) {
+            const bg = '#1b1f27';
+            ctx.beginPath();
+            ctx.arc(b.px, b.y, r, 0, Math.PI * 2);
+            ctx.fillStyle = bg;
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = b.color;
+            ctx.stroke();
+
+            if (b.glyph.text) {
+                ctx.fillStyle = b.color;
+                ctx.font = 'bold 13px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(b.glyph.text, b.px, b.y + 1);
+                continue;
+            }
+
+            // 24×24 glyph scaled into the badge
+            ctx.save();
+            const s = 15 / 24;
+            ctx.translate(b.px - 12 * s, b.y - 12 * s);
+            ctx.scale(s, s);
+            ctx.fillStyle = b.color;
+            ctx.fill(lineBadgePath(b.glyph.body));
+            ctx.fillStyle = bg;
+            ctx.fill(lineBadgePath(b.glyph.cut));
+            ctx.restore();
+        }
+        ctx.restore();
+    }
+};
+
 // Tints the part of the battery chart that belongs to the NEXT day (the slots
 // past midnight — see BATTERY_GRID_SLOTS) so the day boundary reads at a glance.
 // Drawn before the datasets so the lines and forecast dots stay on top.
@@ -2448,7 +2546,7 @@ function createBatteryChart(todayData) {
 
     batteryChart = new Chart(ctx, {
         type: 'line',
-        plugins: [nextDayShadePlugin, autoChargeMarkersPlugin, solarCrossoverPlugin],
+        plugins: [nextDayShadePlugin, autoChargeMarkersPlugin, solarCrossoverPlugin, lineBadgesPlugin],
         data: {
             labels: timeLabels,
             datasets: datasets
