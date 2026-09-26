@@ -969,10 +969,6 @@
                             <div class="flow-node-value" id="flowGridValue">0 kW</div>
                             <div class="flow-node-label" id="flowGridLabel">GRID</div>
                         </div>
-                        <div class="ov flow-node node-heatpump" style="left: 862px; top: 470px;">
-                            <div class="flow-node-value" id="flowHeatPumpValue">-- kW</div>
-                            <div class="flow-node-label">Heat Pump</div>
-                        </div>
 
                         <!-- Powerwall readout -->
                         <div class="mini-card pw-card" style="left: 540px; top: 613px;">
@@ -980,6 +976,13 @@
                             <div class="mc-bar"><div class="mc-fill" id="powerwallBar" style="width: 0%"></div></div>
                             <div class="mc-sub"><b id="flowPowerwallValue">-- kW</b> · <span id="powerwallKwh">-- kWh</span></div>
                             <div class="mc-sub"><span id="powerwallStatus">--</span></div>
+                        </div>
+
+                        <!-- Heat pump readout: indoor reading, setpoint in force, outdoor temp -->
+                        <div class="mini-card hp-card" style="left: 768px; top: 613px;">
+                            <div class="mc-head"><span class="mc-name">Heat Pump</span><span class="mc-pct" id="hpIndoorTemp">--°</span></div>
+                            <div class="mc-sub"><b id="flowHeatPumpValue">-- kW</b> · <span id="hpSetpoint">Set --°</span> · <span id="hpMode">--</span></div>
+                            <div class="mc-sub">Outside <span id="hpOutdoorTemp">--°</span> · <span id="hpStatus">--</span></div>
                         </div>
 
                         <!-- Vehicles -->

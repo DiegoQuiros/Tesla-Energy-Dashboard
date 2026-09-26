@@ -91,6 +91,18 @@ function updateEnergyFlowHouse(latest) {
     setText('flowHomeValue', `${housePower.toFixed(1)} kW`);
     setText('flowHeatPumpValue', `${heatPumpPower.toFixed(1)} kW`);
 
+    // Heat pump card: indoor reading, the setpoint in force for the current mode (after
+    // this cycle's write — see setpointAfterCycle), and outdoor temp (the unit's own
+    // sensor, else the weather feed).
+    const deg = v => (typeof v === 'number' && v > -50 && v !== 0) ? `${Math.round(v)}°` : '--°';
+    const hvacMode = latest.ThermostatMode || latest.ThermostatSystemModeRaw || '';
+    const setField = /cool/i.test(hvacMode) ? 'ThermostatCoolSetpointF' : 'ThermostatHeatSetpointF';
+    setText('hpIndoorTemp', deg(latest.ThermostatCurrentTempF));
+    setText('hpSetpoint', `Set ${deg(setpointAfterCycle(latest, setField))}`);
+    setText('hpMode', hvacMode ? hvacMode.charAt(0).toUpperCase() + hvacMode.slice(1).toLowerCase() : '--');
+    setText('hpOutdoorTemp', deg(latest.ThermostatOutdoorTempF > 0 ? latest.ThermostatOutdoorTempF : latest.WeatherTemperatureF));
+    setText('hpStatus', latest.ThermostatIsActivelyRunning ? 'Running' : 'Idle');
+
     setText('flowGridValue', `${Math.abs(gridPower).toFixed(1)} kW`);
     setText('flowGridLabel', gridPower > 0.1 ? 'IMPORTING' : gridPower < -0.1 ? 'EXPORTING' : 'GRID');
 

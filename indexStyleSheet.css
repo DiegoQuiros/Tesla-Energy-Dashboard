@@ -916,15 +916,6 @@ body {
         color: #8fc0ff;
     }
 
-.node-heatpump {
-    border-color: rgba(255, 138, 92, 0.55);
-    background: rgba(52, 26, 13, 0.72);
-}
-
-    .node-heatpump .flow-node-value {
-        color: #ffb08a;
-    }
-
 /* Mini cards (Powerwall + vehicles) */
 .mini-card {
     position: absolute;
@@ -1000,6 +991,17 @@ body {
 
     .pw-card .mc-name {
         color: #5fe08c;
+    }
+
+    .hp-card .mc-name {
+        color: #ffb08a;
+    }
+
+    /* No bar on this card: a divider fills the bar's 20px slot so it stands as tall as its neighbours */
+    .hp-card .mc-head {
+        padding-bottom: 10px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+        margin-bottom: 9px;
     }
 
 /* Dim a vehicle card when its data is stale/offline */
