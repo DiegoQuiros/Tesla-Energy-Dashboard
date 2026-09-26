@@ -1,7 +1,9 @@
 // Automation Log card — renders the unified controller's action log
 // (automation-log.json, written by ChargeAutomationManager) newest-first in a
 // scrollable card. Refreshed from three places so it never needs a hard refresh:
-//   • loadEnergyData() calls loadAutomationLog() on every data refresh cycle
+//   • loadEnergyData() awaits loadAutomationLog(true) on every data refresh cycle,
+//     before it draws the charts (the battery chart's executed-action icons read
+//     window.automationLog)
 //   • a fallback timer at the collector cadence (in case the data load fails)
 //   • when the tab regains focus, so a long-backgrounded page catches up at once
 // A separate 1-minute tick re-renders the cached entries so the "13m ago" stamps
@@ -26,8 +28,8 @@ const AUTOMATION_LOG_TICK_MS = 60 * 1000;
 const AUTOMATION_LOG_ACTION_STYLES = {
     START_CAR: { label: 'Start car', color: '#39d98a' },
     STOP_CAR:  { label: 'Stop car',  color: '#ff8c42' },
-    HVAC_UP:   { label: 'Heat pump +1°', color: '#6ab7ff' },
-    HVAC_DOWN: { label: 'Heat pump −1°', color: '#4fd1c5' },
+    HVAC_UP:   { label: 'Heat pump +1°', color: '#ff8c42' },
+    HVAC_DOWN: { label: 'Heat pump −1°', color: '#6ab7ff' },
     HVAC_SET:  { label: 'Heat pump set', color: '#4fd1c5' },
     LIMIT_100: { label: 'Limit → 100%', color: '#b58cff' },
     LIMIT_85:  { label: 'Limit → 85%',  color: '#9aa7bd' },
@@ -70,6 +72,19 @@ function renderAutomationLogRow(entry) {
         if (!isNaN(t)) ago = (typeof formatTimeDifference === 'function') ? formatTimeDifference(t, new Date()) : '';
     }
 
+    // "yyyy-MM-dd HH:mm[:ss]" -> "Fri 14:32" (day-of-week instead of the date, seconds dropped).
+    const DOW_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    let displayTime = entry.TimePacific || '';
+    if (entry.TimePacific) {
+        const [datePart, timePart] = entry.TimePacific.split(' ');
+        const [y, mo, d] = (datePart || '').split('-').map(Number);
+        const [h, mi] = (timePart || '').split(':').map(Number);
+        if (![y, mo, d, h, mi].some(isNaN)) {
+            const dow = DOW_ABBR[new Date(y, mo - 1, d).getDay()];
+            displayTime = `${dow} ${String(h).padStart(2, '0')}:${String(mi).padStart(2, '0')}`;
+        }
+    }
+
     // Compact data line explaining the "why".
     const bits = [];
     if (typeof entry.PowerwallPercent === 'number') {
@@ -90,7 +105,7 @@ function renderAutomationLogRow(entry) {
             <div class="automation-log-row-head">
                 <span class="automation-log-badge" style="background:${style.color}1a; color:${style.color}; border-color:${style.color}55;">${escapeAutomationLogHtml(style.label)}</span>
                 ${entry.Target ? `<span class="automation-log-target">${escapeAutomationLogHtml(entry.Target)}</span>` : ''}
-                <span class="automation-log-time" title="${escapeAutomationLogHtml(entry.TimePacific || '')}">${escapeAutomationLogHtml(ago || entry.TimePacific || '')}</span>
+                <span class="automation-log-time" title="${escapeAutomationLogHtml(ago || '')}">${escapeAutomationLogHtml(displayTime || ago || '')}</span>
             </div>
             <div class="automation-log-reason">${escapeAutomationLogHtml(entry.Reason || '')}</div>
             ${bits.length ? `<div class="automation-log-data">${escapeAutomationLogHtml(bits.join('  ·  '))}</div>` : ''}
@@ -302,7 +317,13 @@ let automationLogLastFetchMs = 0;
 // the explicit data-refresh hook); the timers pass nothing so a refresh that just
 // happened isn't immediately repeated.
 async function loadAutomationLog(force) {
-    if (automationLogInFlight) return automationLogInFlight;
+    // A forced call must return a log read AFTER it was made (the data refresh reads the
+    // log after the plan — see fetchAutomationPlanThenLog), so it waits out a fetch already
+    // in flight instead of sharing that fetch's older answer.
+    while (automationLogInFlight) {
+        if (!force) return automationLogInFlight;
+        await automationLogInFlight.catch(() => {});
+    }
     if (!force && automationLogLastFetchMs &&
         Date.now() - automationLogLastFetchMs < AUTOMATION_LOG_MIN_FETCH_GAP_MS) {
         return;
@@ -338,8 +359,8 @@ async function loadAutomationLog(force) {
     }
 }
 
-// Called by loadEnergyData() on every data refresh cycle so the card lands new
-// actions at the same moment the rest of the dashboard updates.
+// Awaited by loadEnergyData() on every data refresh cycle so the card and the
+// battery chart's icons land new actions at the same moment as the data.
 window.loadAutomationLog = loadAutomationLog;
 
 document.addEventListener('DOMContentLoaded', function () {

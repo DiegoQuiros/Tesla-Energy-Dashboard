@@ -323,6 +323,13 @@ body {
         flex-wrap: wrap;
     }
 
+/* The SVG Sankey icon (sprite at the top of index.html), sized to sit like an emoji */
+.sankey-icon {
+    width: 1.15em;
+    height: 1.15em;
+    vertical-align: -0.2em;
+}
+
 .solar-kwh-stats {
     font-size: 0.95rem;
     font-weight: normal;

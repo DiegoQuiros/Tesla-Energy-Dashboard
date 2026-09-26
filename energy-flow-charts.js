@@ -51,6 +51,14 @@ function setCableFlow(id, active, reverse, kw, color) {
     }
 }
 
+// Plugged in but not drawing power: tint the static cable blue (Tesla-app
+// convention) instead of the default idle gray. No animated flow either way.
+function setCablePlugged(id, plugged) {
+    const el = document.getElementById(id);
+    const base = el && el.previousElementSibling; // the static .cable path under the flow
+    if (base) base.style.stroke = plugged ? '#7fb2ff' : '';
+}
+
 // Update the energy-flow house scene when data changes
 function updateEnergyFlowHouse(latest) {
     const solarPower = latest.SolarPowerKw || 0;
@@ -98,9 +106,16 @@ function updateEnergyFlowHouse(latest) {
     setCableFlow('flowGrid', Math.abs(gridPower) > 0.1, gridPower > 0, gridPower, gridPower > 0 ? BLUE : GREEN);
     // Powerwall: charging (house -> pw) = forward; discharging (pw -> house) = reverse
     setCableFlow('flowPw', Math.abs(batteryPower) > 0.05, batteryPower > 0, batteryPower, GREEN);
-    // Cars only ever receive energy (wall -> car = forward)
+    // Cars only ever receive energy (wall -> car = forward). Plugged in but not
+    // charging: cable shows solid blue (Tesla-app convention), no animated flow.
+    // Plugged in = the Wall Connector's answer when it has one (it sees the car even
+    // while the car is asleep/offline); older samples fall back to the car's own report.
+    const pluggedIn = key => latest.WallConnectorState != null
+        ? latest.WallConnectorVehicle === key : !!latest[key + 'IsPluggedIn'];
     setCableFlow('flowCar1', !!latest.Model3IsCharging, false, m3Charge, GREEN);
+    setCablePlugged('flowCar1', !latest.Model3IsCharging && pluggedIn('Model3'));
     setCableFlow('flowCar2', !!latest.ModelXIsCharging, false, mxCharge, GREEN);
+    setCablePlugged('flowCar2', !latest.ModelXIsCharging && pluggedIn('ModelX'));
     // Heat pump draws from the house (house -> heat pump = forward)
     setCableFlow('flowHp', heatPumpPower > 0, false, heatPumpPower, '#ff8a5c');
 

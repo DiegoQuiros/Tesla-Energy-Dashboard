@@ -699,6 +699,25 @@ function createTemperatureChart(todayData) {
     });
 }
 
+// The setpoint the thermostat held after <point>'s collector cycle. A sample reads the
+// thermostat BEFORE the controller acts (the collector saves the sample, then the
+// controller writes), so its own reading is the setpoint that held over the interval
+// ending there, and a write made that cycle first shows on the next sample. So: the next
+// reading when there is one; for the newest sample, the plan the controller published
+// after acting on it (its CoolSetpointF is what the write left); else the point's own.
+function setpointAfterCycle(point, field) {
+    const i = energyData.indexOf(point);
+    const next = i >= 0 && i + 1 < energyData.length ? energyData[i + 1][field] : null;
+    if (typeof next === 'number' && next > 0) return next;
+    const plan = window.automationPlan;
+    if (field === 'ThermostatCoolSetpointF' && i === energyData.length - 1 && plan
+        && typeof plan.CoolSetpointF === 'number' && plan.CoolSetpointF > 0
+        && Date.parse(plan.GeneratedUtc) >= Date.parse(point.Timestamp)) {
+        return plan.CoolSetpointF;
+    }
+    return point[field];
+}
+
 // Heat-pump / HVAC chart: indoor temp + heat/cool setpoints across the day (12am–11:59pm),
 // with outdoor temp for context. Reads Bryant thermostat fields written by the collector.
 function createHvacChart() {
@@ -745,8 +764,13 @@ function createHvacChart() {
 
     const pos = (v) => (typeof v === 'number' && v > 0) ? v : null;
     const indoorTemps = filteredData.map(p => pos(p.ThermostatCurrentTempF));
-    const heatSetpoints = filteredData.map(p => pos(p.ThermostatHeatSetpointF));
-    const coolSetpoints = filteredData.map(p => pos(p.ThermostatCoolSetpointF));
+    // Each slot is drawn with the setpoint left in place AFTER its cycle (see
+    // setpointAfterCycle). Drawing each reading from its own slot onward put every
+    // automated change one slot late (2026-09-26: 9:00 wrote 80 → 79, chart held 80).
+    const afterEachCycle = (field) => filteredData.map((p, i) =>
+        pos(i + 1 < filteredData.length ? filteredData[i + 1][field] : setpointAfterCycle(p, field)));
+    const heatSetpoints = afterEachCycle('ThermostatHeatSetpointF');
+    const coolSetpoints = afterEachCycle('ThermostatCoolSetpointF');
     // Prefer the heat pump's own outdoor sensor; fall back to the weather feed
     const outdoorTemps = filteredData.map(p =>
         pos(p.ThermostatOutdoorTempF) ??
@@ -884,8 +908,11 @@ function updateHvacStats(filteredData, dayData) {
     set('hvacMode', mode);
     set('hvacStatus', status);
     set('hvacHumidity', num(latest.ThermostatHumidity, '%'));
-    set('hvacHeatSet', temp(latest.ThermostatHeatSetpointF));
-    set('hvacCoolSet', temp(latest.ThermostatCoolSetpointF));
+    // The setpoint in force now: after this cycle's write, not the reading taken before it.
+    const heatSet = setpointAfterCycle(latest, 'ThermostatHeatSetpointF');
+    const coolSet = setpointAfterCycle(latest, 'ThermostatCoolSetpointF');
+    set('hvacHeatSet', temp(heatSet));
+    set('hvacCoolSet', temp(coolSet));
 
     // Only the setpoint relevant to the current mode is shown: Cool mode hides
     // the Heat Set tile, any other mode hides the Cool Set tile.
@@ -911,8 +938,8 @@ function updateHvacStats(filteredData, dayData) {
 
     if (summaryEl) {
         const zone = latest.ThermostatZoneName ? `${latest.ThermostatZoneName}: ` : '';
-        const setpoint = /cool/i.test(mode) ? latest.ThermostatCoolSetpointF
-            : /heat/i.test(mode) ? latest.ThermostatHeatSetpointF
+        const setpoint = /cool/i.test(mode) ? coolSet
+            : /heat/i.test(mode) ? heatSet
                 : latest.ThermostatTargetTempF;
         summaryEl.textContent =
             `${zone}${temp(latest.ThermostatCurrentTempF)} → ${temp(setpoint)} (${mode})`;

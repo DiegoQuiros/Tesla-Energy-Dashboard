@@ -64,7 +64,9 @@ function setupTimeNavigatorCallbacks() {
    ============================================================
    Every fetch goes through refreshData(), which loads the blob, lets
    loadEnergyData() write the timestamp label and the charts in the same pass,
-   and then arms exactly one timeout for the next attempt.
+   and then arms exactly one timeout for the next attempt. The one other job on
+   that timer, refreshAutomationPlan(), re-polls only the controller's plan and
+   log when they trail the sample (see scheduleNextCycle).
 
    There used to be a second, fixed-interval timer alongside this one. It ticked
    every DATA_INTERVAL_MINUTES counting from PAGE-LOAD time rather than from the
@@ -82,6 +84,7 @@ const REFRESH_ERROR_RETRY_MS = 60000;  // fetch failed outright
 
 let refreshTimeout = null;
 let staleRetries = 0;
+let planRetries = 0;   // same budget, spent waiting for the controller's plan once the sample is up
 
 function cancelScheduledRefresh() {
     if (refreshTimeout) {
@@ -106,7 +109,7 @@ function msUntilNextPublish(sampleTime) {
     return target - now;
 }
 
-function scheduleRefresh(delayMs, reason) {
+function scheduleRefresh(delayMs, reason, run = refreshData) {
     cancelScheduledRefresh();
 
     // Historical mode freezes the view; resumeLiveRefresh() re-arms on the way back
@@ -120,7 +123,7 @@ function scheduleRefresh(delayMs, reason) {
 
     refreshTimeout = setTimeout(() => {
         refreshTimeout = null;
-        refreshData(reason);
+        run(reason);
     }, delayMs);
 }
 
@@ -140,7 +143,8 @@ async function refreshData(reason) {
 
     if (after > before) {
         staleRetries = 0;
-        scheduleRefresh(msUntilNextPublish(lastDataTimestamp), 'next publish boundary');
+        planRetries = 0;
+        scheduleNextCycle('next publish boundary');
         return;
     }
 
@@ -155,12 +159,36 @@ async function refreshData(reason) {
     }
 }
 
+// The sample on screen is current: sleep until the next boundary — unless the
+// controller's plan (and log) for it isn't up yet. The collector saves the sample
+// BEFORE the controller runs, so a fetch can land in between and draw last cycle's
+// actions; then re-poll just the plan and log on the stale-sample cadence until
+// they land (see automationPlanBehindSample in dashboard-updater.js).
+function scheduleNextCycle(reason) {
+    const behind = typeof automationPlanBehindSample === 'function' && automationPlanBehindSample();
+    if (behind && ++planRetries <= REFRESH_MAX_STALE_RETRIES) {
+        scheduleRefresh(REFRESH_STALE_RETRY_MS,
+            `automation plan not up yet, retry ${planRetries}/${REFRESH_MAX_STALE_RETRIES}`, refreshAutomationPlan);
+        return;
+    }
+    planRetries = 0;
+    scheduleRefresh(msUntilNextPublish(lastDataTimestamp),
+        behind ? 'gave up waiting for the automation plan' : reason);
+}
+
+async function refreshAutomationPlan(reason) {
+    console.log(`Refreshing automation plan (${reason})...`);
+    await reloadAutomationPlan();
+    scheduleNextCycle('next publish boundary');
+}
+
 // Re-arm after historical mode or a background tab. Fetches straight away if the
 // sample on screen has already aged past one collector interval.
 function resumeLiveRefresh() {
     if (window.timeNavigator && !window.timeNavigator.isInLiveMode()) return;
 
     staleRetries = 0;
+    planRetries = 0;
 
     const maxAge = DATA_INTERVAL_MINUTES * 60 * 1000 + REFRESH_BUFFER_MS;
     if (!lastDataTimestamp || Date.now() - lastDataTimestamp.getTime() > maxAge) {
@@ -169,5 +197,5 @@ function resumeLiveRefresh() {
         return;
     }
 
-    scheduleRefresh(msUntilNextPublish(lastDataTimestamp), 'resumed live mode');
+    scheduleNextCycle('resumed live mode');
 }

@@ -94,6 +94,36 @@ const SHARED_CONFIG = {
         // full afternoon reads as clouds). The gateway reports no values between 98.5 and 100.
         "FULL_PACK_PERCENT": 99.5,
 
+        // ── Pack at its INTAKE LIMIT (2026-09-26, Diego's 9/25 chart) ──
+        // Below full, the pack can still refuse more power: it charges at a flat rate and the
+        // inverter curtails the rest of the array, so extra house load is met by solar rising,
+        // not by the pack charging slower (9/25 12:15-14:15: a flat 4.23-4.43 kW from 29% to 90%
+        // while solar = load + ~4.3). Grid-connected the ceiling is a hard 5.0 kW (p99 5.00 every
+        // month); OFF-GRID it sits lower and drifts (p99 5.00 in May, 4.82 Jul, 4.46 Sep; 4.38 above
+        // 100°F outdoors), so no fixed kW alone can find it. Detector (IsAtIntakeLimit): off-grid,
+        // below FULL_PACK_PERCENT and charging >= INTAKE_LIMIT_KW, OR the last three samples all
+        // >= INTAKE_STEADY_MIN_KW and within INTAKE_STEADY_RANGE_KW of each other (a pack with room
+        // takes solar − load, which moves with every cloud and appliance; a limited one does not).
+        // Grid-connected: charging >= INTAKE_LIMIT_ON_GRID_KW. Scored against 107 unambiguous
+        // load-step events since 2026-04-01 (solar covered >= 80% of the step = limited, <= 20% =
+        // room): precision 0.90, recall 0.69. Fixed 4.0 kW alone: 0.81 / 0.75; fixed 4.4: 0.92 / 0.42;
+        // "within X of a 3-day learned ceiling": 0.66 / 0.73 (rejected).
+        // Used for: (1) solar samples taken at the limit are curtailed — skipped by the solar
+        // PROFILE like full-pack samples (NOT by the weather scales: skipping them there measured
+        // worse, 7.43 -> 7.75 pp); (2) the sims charge the pack no faster than the median rate of
+        // at-limit samples over the last INTAKE_CEILING_DAYS (off-grid; grid-connected or fewer
+        // than INTAKE_CEILING_MIN_SAMPLES = MAX_POWERWALL_RATE_KW); (3) solar banking treats a pack
+        // at its limit like a full one (see UNIFIED_CONTROLLER BANK_*).
+        // Day-forecast backtest, 642 forecasts 2026-04-15..09-25 (8/10/12/14 h, pack % until 9 PM):
+        // MAE 7.43 -> 7.31 pp (1st half 6.02 -> 5.96, 2nd half 9.04 -> 8.85), bias -1.35 -> -1.24;
+        // profile exclusion alone 7.33, ceiling alone 7.41.
+        "INTAKE_LIMIT_KW": 4.3,
+        "INTAKE_LIMIT_ON_GRID_KW": 4.9,
+        "INTAKE_STEADY_MIN_KW": 3.0,
+        "INTAKE_STEADY_RANGE_KW": 0.25,
+        "INTAKE_CEILING_DAYS": 7,
+        "INTAKE_CEILING_MIN_SAMPLES": 8,
+
         // How far past midnight the Battery Levels chart (and therefore the projection
         // the collector publishes in automation-plan.json) runs, so the overnight drain
         // and the next morning's recharge are on screen. Shared because the C# projector
@@ -111,7 +141,7 @@ const SHARED_CONFIG = {
     "CHARGE_AUTOMATION": {
         // The night window: the anchor decision fires at the first cycle at/after
         // START_HOUR, and the window is treated as closed by MORNING_END_HOUR.
-        "NIGHT_HVAC_START_HOUR": 22,                 // 10 PM — first cycle at/after this makes the night's setpoint decision
+        "NIGHT_HVAC_START_HOUR": 21,                 // 9 PM (was 10 PM until 2026-09-26: Diego is often asleep before 10) — first cycle at/after this makes the night's setpoint decision
         "NIGHT_HVAC_MORNING_END_HOUR": 12,           // hard backstop: the night window closes at noon
         "NIGHT_HVAC_BASELINE_COOL_SETPOINT_F": 78,   // setpoint the overnight load projection is normalised against
         "NIGHT_HVAC_FORECAST_HORIZON_HOUR": 14,      // cap the overnight forecast at 2 PM next day (backstop when 100% is never reached)
@@ -243,18 +273,18 @@ const SHARED_CONFIG = {
         "OVERNIGHT_RECOVER_PERCENT": 15, // step the heat pump back DOWN toward base only when the overnight low is at/above this (dead band vs the 5% floor prevents flapping)
         "CAR_PROTECT_SOC_PERCENT": 50,   // a charging car at/below this SOC is protected — shed the heat pump instead of stopping it
         "COMFORT_MIN_F": 76,             // coolest allowed cool setpoint (only reached when excess solar would otherwise be wasted)
-        // Resting cool setpoint — the floor rule 6's comfort descent walks down to, day and
-        // night. RAISED 78 -> 79 on 2026-07-27 (Diego): the cars are the priority for spare
-        // energy, and the last degree from 79 to 78 costs ~0.7 kW of house load (the measured
-        // daytime sensitivity) that would otherwise be charging a car or filling the pack. The
-        // automation no longer spends it on its own. 78 and below is still REACHABLE, but only
-        // through the banking rule below — i.e. only when there is measured waste to pay for it,
-        // which is exactly "once the cars are charged, send the unused energy to the heat pump".
-        // Side effect worth knowing: banking's depth is COMFORT_BASE_F - COMFORT_MIN_F, so the
-        // ladder is now 3 degrees (79->76) rather than 2. Each further degree needs proportionally
-        // more waste signal, so the third one is self-limiting and rarely reached; raise
-        // COMFORT_MIN_F to 77 if you want the old 2-degree depth back.
-        "COMFORT_BASE_F": 80,            // resting/night cool setpoint — day and night floor for normal operation
+        // Resting DAYTIME cool setpoint — where the house sits unless a rule has a reason to
+        // move it, and the floor the daytime comfort descent (rule G) walks back down to.
+        // LOWERED 80 -> 78 on 2026-09-26 (Diego: "78 is the best temperature; 80 is a
+        // compromise I put up with to help the car and Powerwall charge"). Every degree
+        // above 78 is now a cost a rule must justify (overnight survival, evening pre-shed,
+        // car protection) — the old base made 78 look like "banking" and the unwind walked
+        // it up to 80 at midday even with the pack forecast to fill. A/B replay of the plan
+        // over 60 moments 2026-09-06..25: overnight low +2.8 pp mean, never under the 5% floor.
+        // Banking still cools below it to COMFORT_MIN_F (2 degrees: 78 -> 76) with solar
+        // that has nowhere to go — the precool lowers the evening's cooling cost.
+        // The night uses NIGHT_ANCHOR (79) instead, not this.
+        "COMFORT_BASE_F": 78,            // resting daytime cool setpoint (floor of the daytime descent, ceiling of banking's unwind)
         "COMFORT_MAX_F": 82,             // hottest the NIGHT may get: the 10 PM anchor's ceiling and the cap on mid-night
                                          // survival raises (Diego: sleeping cool matters most — see EVENING_MAX_F)
 
@@ -382,6 +412,7 @@ const SHARED_CONFIG = {
         "BANK_ENTER_PERCENT": 99,        // engage banking at/above this pack % ...
         "BANK_EXIT_PERCENT": 97,         // ... and stay engaged until it falls below this (the pack crosses 99 between consecutive samples 16% of the time)
         "BANK_SMOOTH_SAMPLES": 3,        // median over this many samples (45 min) of the waste signal — clouds and the fridge move it by more than a degree's worth; do NOT widen (see above)
+        "BANK_DISCHARGE_GUARD_KW": 0.75, // pack discharging more than this = the sun is not covering the house, so no solar is being wasted. A FULL pack off-grid trickles out a median 0.27 kW (p95 0.60) on its own, so the guard sits above that and below trickle + one banked degree (~1.0 kW). Measured 2026-09-26 over 235 full-pack daytime samples
 
         // Storm / reduced-solar pre-charge: raise BOTH cars' charge limit to 100% when a
         // solar shortfall is coming (grid-avoidance beats battery-degradation), back to 85%

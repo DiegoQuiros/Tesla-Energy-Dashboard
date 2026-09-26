@@ -66,12 +66,57 @@ async function fetchAutomationPlan() {
     }
 }
 
+// The controller's output for a cycle: its plan, THEN its log. RunAsync appends the log
+// before it publishes the plan, so a log read after a plan built from the newest sample
+// holds every action taken that cycle — actions that plan no longer lists. Read in
+// parallel, an action executed this cycle could be on neither. Never throws.
+async function fetchAutomationPlanThenLog() {
+    const plan = await fetchAutomationPlan();
+    if (typeof window.loadAutomationLog === 'function') {
+        // Forced so the log's 60 s throttle can't skip it on a quick retry. A log failure
+        // keeps the card's last good copy and must not fail the refresh.
+        await window.loadAutomationLog(true)
+            .catch(e => console.warn('Automation log refresh failed:', e.message));
+    }
+    return plan;
+}
+
+// True while the plan on hand predates the newest sample. The collector saves the sample
+// first and the controller acts and publishes a few seconds later (3 s on 2026-09-25), so
+// a fetch in between gets last cycle's plan and log; main.js re-polls them until this
+// clears. False when either stamp is missing, so an odd blob can't stall the refresh.
+function automationPlanBehindSample() {
+    const latest = energyData.length ? energyData[energyData.length - 1] : null;
+    const sampleMs = latest ? Date.parse(latest.Timestamp) : NaN;
+    const planMs = window.automationPlan ? Date.parse(window.automationPlan.GeneratedUtc) : NaN;
+    return planMs < sampleMs;
+}
+
+// Re-poll just the controller's output (two small blobs, not the 11 MB data blob) for the
+// sample already on screen, and redraw the charts once a newer plan lands. Never throws.
+async function reloadAutomationPlan() {
+    try {
+        const previous = window.automationPlan ? window.automationPlan.GeneratedUtc : null;
+        const plan = await fetchAutomationPlanThenLog();
+        if (!plan || plan.GeneratedUtc === previous) return;
+        window.automationPlan = plan;
+        if (typeof Chart !== 'undefined') createCharts();
+    } catch (error) {
+        console.error('Error reloading the automation plan:', error);
+    }
+}
+
 async function loadEnergyData() {
     try {
         console.log('Loading energy data from:', AZURE_BLOB_URL);
 
+        // The plan and log land in the same pass, BEFORE createCharts(): the battery chart
+        // builds its executed-action icons from window.automationLog, and this cycle's plan
+        // has already dropped an action executed this cycle, so a log still in flight (the
+        // old fire-and-forget call) erased that action from the chart until a page reload.
+        const previousPlanUtc = window.automationPlan ? window.automationPlan.GeneratedUtc : null;
         const [data, summary, automationPlan] = await Promise.all([
-            fetchEnergyData(), fetchDailySummary(), fetchAutomationPlan()]);
+            fetchEnergyData(), fetchDailySummary(), fetchAutomationPlanThenLog()]);
         dailySummaryData = summary;
         // Keep the last good plan on a transient fetch failure so the forecast
         // doesn't blink off for a cycle (the fetch races the collector's upload)
@@ -95,20 +140,15 @@ async function loadEnergyData() {
 
         updateDashboard();
 
-        // Refresh the Automation Log / Alerts cards on the same cycle so newly
-        // logged actions appear without the user reloading the page. Fire and
-        // forget — it renders itself and never throws (fetch errors are caught).
-        // Unforced, so it no-ops against the page-load fetch a moment earlier.
-        if (typeof window.loadAutomationLog === 'function') {
-            window.loadAutomationLog();
-        }
-
-        // Re-draw the charts only when the payload actually advanced. A poll that
-        // races the collector returns the SAME sample, and re-animating the charts
-        // against it reads as an update while the timestamp label written just
-        // above doesn't move — the chart and the label must always show the same
-        // cycle. (First load has no previous timestamp, so it always renders.)
-        if (previousTimestamp && lastDataTimestamp.getTime() === previousTimestamp.getTime()) {
+        // Re-draw the charts only when the payload actually advanced — the sample, or
+        // the controller's plan (a newer plan means a newer log too, see
+        // fetchAutomationPlanThenLog). A poll that races the collector returns the
+        // SAME sample, and re-animating the charts against it reads as an update while
+        // the timestamp label written just above doesn't move — the chart and the label
+        // must always show the same cycle. (First load has no previous timestamp, so it
+        // always renders.)
+        const planAdvanced = !!automationPlan && automationPlan.GeneratedUtc !== previousPlanUtc;
+        if (previousTimestamp && lastDataTimestamp.getTime() === previousTimestamp.getTime() && !planAdvanced) {
             console.log('No new sample — leaving charts as they are');
             return true;
         }
