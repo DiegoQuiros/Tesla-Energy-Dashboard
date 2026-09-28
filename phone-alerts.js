@@ -5,15 +5,17 @@
 // iPhone: web push only reaches a dashboard opened from its Home Screen icon (iOS 16.4+), so
 // in plain Safari the button explains how to add it.
 //
-// Turning alerts on hands the browser's PushSubscription to the collector by creating one
-// blob in a private container, through the upload-only URL in push-config.json (written by
-// `dotnet run -- push-setup`). The blob is named after a hash of the endpoint, so handing the
-// same subscription over again is a harmless "already stored".
+// One device only. While nobody has subscribed, push-config.json carries an upload-only URL
+// and turning alerts on creates one blob in a private container through it. Once a device
+// has subscribed, the collector revokes that URL and publishes null instead: the button then
+// shows only on the subscribed device (to turn alerts off) and stays hidden everywhere else.
 
 (function () {
     const button = document.getElementById('alertsButton');
     if (!button) return;
+    button.hidden = true; // until we know whether this device may use it
 
+    const TAKEN = 'Alerts are already set up on another device.';
     const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
     const isIos = /iPhone|iPad|iPod/.test(navigator.userAgent)
         || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -27,6 +29,7 @@
         button.title = on
             ? 'Phone alerts are on for this device. Tap to turn them off.'
             : 'Get a notification when the Powerwall is back on the grid';
+        button.hidden = false;
     }
 
     function fromBase64Url(s) {
@@ -46,8 +49,8 @@
     }
 
     // 201 = stored. The upload URL may create but never overwrite, so a subscription stored
-    // earlier comes back 403 UnauthorizedBlobOverwrite — success too. (An expired or revoked
-    // URL is a 403 with AuthenticationFailed instead.)
+    // earlier comes back 403 UnauthorizedBlobOverwrite — success too. A revoked URL (another
+    // device got there first) is a 403 with AuthenticationFailed.
     async function upload(subscription, config) {
         const json = subscription.toJSON();
         const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(json.endpoint));
@@ -58,9 +61,9 @@
             headers: { 'x-ms-blob-type': 'BlockBlob', 'Content-Type': 'application/json', 'If-None-Match': '*' },
             body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys, createdUtc: new Date().toISOString() })
         });
-        const storedEarlier = response.status === 409
-            || response.headers.get('x-ms-error-code') === 'UnauthorizedBlobOverwrite';
-        if (!response.ok && !storedEarlier) throw new Error(`saving the subscription: HTTP ${response.status}`);
+        const code = response.headers.get('x-ms-error-code');
+        if (response.ok || response.status === 409 || code === 'UnauthorizedBlobOverwrite') return;
+        throw new Error(code === 'AuthenticationFailed' ? TAKEN : `saving the subscription: HTTP ${response.status}`);
     }
 
     async function enable() {
@@ -71,6 +74,7 @@
             return;
         }
         const [config, registration] = await Promise.all([pushConfig(), navigator.serviceWorker.ready]);
+        if (!config.subscriptionUploadUrl) throw new Error(TAKEN);
         let subscription = await registration.pushManager.getSubscription();
         const key = subscription && subscription.options && subscription.options.applicationServerKey;
         if (key && toBase64Url(key) !== config.vapidPublicKey) {
@@ -88,11 +92,11 @@
     }
 
     async function disable() {
-        if (!confirm('Turn off phone alerts on this device?')) return;
+        if (!confirm('Turn off phone alerts on this device? Turning them back on later needs `dotnet run -- push-reset`.')) return;
         await current.unsubscribe();
-        // The collector deletes its copy the first time the push service reports it gone.
+        // The collector frees the slot the first time the push service reports this one gone.
         current = null;
-        show(false);
+        button.hidden = true;
     }
 
     button.addEventListener('click', async () => {
@@ -108,27 +112,34 @@
             else await enable();
         } catch (err) {
             console.error('Phone alerts:', err);
-            alert(`Couldn't turn alerts on: ${err.message}`);
+            alert(err.message === TAKEN ? TAKEN : `Couldn't turn alerts on: ${err.message}`);
+            if (err.message === TAKEN) button.hidden = true;
         } finally {
             button.disabled = false;
         }
     });
 
-    show(false);
+    const configLoaded = pushConfig();
+
     if (!supported) {
-        button.hidden = !(isIos && !standalone);
+        // Plain Safari on iPhone: offer the Add-to-Home-Screen hint only while the slot is open.
+        if (isIos && !standalone)
+            configLoaded.then(config => { if (config.subscriptionUploadUrl) show(false); }).catch(() => {});
         return;
     }
 
     navigator.serviceWorker.register('sw.js')
         .then(() => navigator.serviceWorker.ready)
-        .then(registration => registration.pushManager.getSubscription())
-        .then(subscription => {
-            if (!subscription || Notification.permission !== 'granted') return;
-            current = subscription;
-            show(true);
-            // Hand it over again in case the first upload never arrived.
-            return pushConfig().then(config => upload(subscription, config));
+        .then(registration => Promise.all([registration.pushManager.getSubscription(), configLoaded]))
+        .then(([subscription, config]) => {
+            if (subscription && Notification.permission === 'granted') {
+                current = subscription;
+                show(true);
+                // While the slot is still open, hand it over again in case the first upload never arrived.
+                if (config.subscriptionUploadUrl) return upload(subscription, config);
+            } else if (config.subscriptionUploadUrl) {
+                show(false);
+            }
         })
         .catch(err => console.warn('Phone alerts:', err.message || err));
 })();

@@ -492,6 +492,9 @@ const SHARED_CONFIG = {
         // recovered to this. Tesla publishes no minimum for Go Off-Grid, but the gateway
         // reconnects by itself at ~5% (every on-grid episode 9/11-9/26 began at
         // 4.9-6.1%), so going off-grid anywhere near that bounces straight back.
-        "OFF_GRID_READY_PERCENT": 15
+        "OFF_GRID_READY_PERCENT": 15,
+        // Still on grid (and still at the threshold) this long after "ready": one reminder,
+        // which replaces the first alert on the phone. 0 = no reminder.
+        "REMINDER_MINUTES": 60
     }
 };
