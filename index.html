@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tesla Energy Dashboard</title>
+    <!-- Home Screen app: iOS delivers phone alerts only to one (see phone-alerts.js) -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-180.png">
+    <meta name="theme-color" content="#0a0e16">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="indexStyleSheet.css">
     <link rel="stylesheet" href="vehicle.css">
@@ -49,6 +53,7 @@
                 <div class="header">
                     <h2><span class="spark">⚡</span> Energy Flow</h2>
                     <div class="last-updated" id="lastUpdated">Loading...</div>
+                    <button id="alertsButton" class="alerts-btn" type="button">🔕 Alerts</button>
                 </div>
                 <div class="flow-visualization">
                     <!-- Everything is laid out in a fixed 1210x600 stage that scales to fit -->
@@ -1184,5 +1189,6 @@
     <script src="card-height-sync.js"></script>
     <script src="section-rail.js"></script>
     <script src="main.js"></script>
+    <script src="phone-alerts.js"></script>
 </body>
 </html>

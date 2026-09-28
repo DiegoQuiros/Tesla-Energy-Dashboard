@@ -744,6 +744,29 @@ body {
             filter: drop-shadow(0 0 6px rgba(255, 176, 31, 0.5));
         }
 
+/* Phone-alerts toggle (phone-alerts.js), right-hand end of the Energy Flow header */
+.alerts-btn {
+    align-self: center;
+    background: linear-gradient(145deg, #3a3a3a, #222);
+    border: 1px solid #555;
+    border-radius: 8px;
+    color: #bbb;
+    cursor: pointer;
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+    .alerts-btn.on {
+        color: #ffcf5c;
+        border-color: rgba(255, 176, 31, 0.6);
+    }
+
+    .alerts-btn:disabled {
+        opacity: 0.6;
+        cursor: wait;
+    }
+
     .energy-flow-section .last-updated {
         /* Lives in the fixed top band, left-hand end. It used to float bottom-right,
            where it sat on top of the charts' x-axis labels — now that every card is
@@ -1135,7 +1158,8 @@ body {
     .collapse-btn,
     .maximize-btn,
     .day-toggle-btn,
-    .close-btn {
+    .close-btn,
+    .alerts-btn {
         padding: 4px 9px;
         font-size: 0.78rem;
     }

@@ -215,11 +215,47 @@ const SHARED_CONFIG = {
         // DEADBAND_F discounts the first quarter degree: the thermostat reports whole °F,
         // so a 1 °F indoor-vs-setpoint difference is often just rounding.
         //
-        // The term is SYMMETRIC, by conservation of energy: raising the setpoint above the
-        // current indoor temperature lets the house absorb heat the heat pump would
-        // otherwise have had to remove, so it is worth the same kWh per °F as cooling it
-        // down costs. That is what makes the chart move when Diego raises the thermostat
-        // at bedtime, not only when he lowers it.
+        // Raising the setpoint above the indoor temperature is the reverse move: the
+        // compressor idles, the house draws only its IDLE load for that hour (measured from
+        // the compressor-off samples of the last ANALOG_POOL_DAYS), and the heat the heat
+        // pump stops removing — the profile's HVAC share — warms the house at the same
+        // 0.85 kWh per °F until it reaches the new setpoint. That is what makes the chart
+        // move when the setpoint goes up, not only when it comes down.
+        //
+        // ── The EVENING coast (2026-09-26) ──
+        // The term used to start at 8 PM, and a raise was credited as a flat "up to SWING_KW
+        // less, floored at 0.3 kW". Both were wrong for the evening pre-shed (4 PM onward):
+        //   * a 4–7 PM raise got NO credit, while the modeled house walked to the raised
+        //     setpoint uncharged and was then charged the whole bedtime pull-down from
+        //     there. 2026-09-25: compressor off 5:30–9 PM at ~0.55 kW, house 80 → 82 °F and
+        //     no further; the 9/26 chart assumed 84 °F by 8 PM and projected 0% at dawn.
+        //   * holding costs ~1.4 kW over idle at 5 PM but ~0.2 kW by 10 PM, and the evening
+        //     idle draw is 0.5–1.0 kW (cooking, TV), not 0.3.
+        // Replayed at 4–10 PM on every night 2026-07-22..09-25 (445 forecasts) with the
+        // setpoint changes that actually followed, scored to 7 AM against the real pack:
+        //   * 31 evenings with a ≥2 °F coast: MAE 9.72 → 6.75 pp, overnight-low bias
+        //     −8.85 → −5.25 pp; the other evenings 6.45 → 5.93; all 8.03 → 6.32.
+        //   * later half only (08-24..09-25): coast 8.05 → 5.88, others 6.59 → 6.09.
+        //   * the modeled indoor temperature tracks the thermostat within ~0.4 °F through the
+        //     evening; slowing the modeled warm-up "fit" better but put the house 1 °F too
+        //     cool — it was hiding the pull-down residual below, so it was not taken.
+        //   * start hour 3–5 PM and idle history 7–28 days all score within 0.02 pp.
+        // The load PROFILE, inside this window, is built only from samples where the house
+        // held its setpoint (a past evening's coast or pull-down would otherwise be counted
+        // twice — once in the profile, once here): 6.49 → 6.34 pp of the above. Daytime
+        // forecasts given the real schedule improve too (9 AM 13.90 → 12.34, 3 PM 6.73 →
+        // 6.22); with the setpoint held — what the car gates and the day peak ask — no
+        // 97% verdict changes and the peak moves −0.03 pp on average, while the evening
+        // part is now honestly "held" (the old profile quietly assumed a typical coast).
+        // COAST_MAX_RISE_F is read off the thermostat, not fitted to the pack: after a raise
+        // the house gains ~1 °F in 30 min, ~1.7 by 1 h, ~2 by 2 h and levels off — +1 °F on
+        // an 84 °F evening, +3 °F at 92–94 °F, never more across 32 coasts. Without it a 4 PM
+        // pre-shed to 84 walked the modeled house 5.5 °F to 83.7 by 8:30 PM (9/25's real
+        // house stopped at 82) and charged the 9 PM anchor a pull-down that never happens:
+        // the 9/26 11:45 chart went 0% → 19% at dawn. Backtest-neutral (6.34 → 6.32) —
+        // history has few coasts long enough to reach it.
+        // Still pessimistic on coast nights (−5 pp at the overnight low): the pull-down
+        // after ~10 PM is over-charged even from the right starting temperature.
         //
         // Backtested end to end (see PredictPowerwallDay): the projected pre-dawn low
         // scored at every 15-min cycle from 8 PM to 2 AM on all 19 nights, 475 forecasts.
@@ -231,8 +267,9 @@ const SHARED_CONFIG = {
         "HOUSE_THERMAL_KWH_PER_F": 0.85,   // house-load kWh to move the indoor temperature 1 °F
         "HOUSE_THERMAL_DEADBAND_F": 0.25,  // ignore this much of the indoor-vs-setpoint gap (1 °F reporting resolution)
         "HOUSE_HVAC_SWING_KW": 1.0,        // kW the heat pump adds above the profile while pulling down
-        "NIGHT_LOAD_MODEL_START_HOUR": 20, // the pull-down term applies from this hour ...
-        "NIGHT_LOAD_MODEL_END_HOUR": 8,    // ... until this one (the solar-free window it was fitted on)
+        "HOUSE_COAST_MAX_RISE_F": 3,       // a coast warms the house at most this far above where it began (max measured +3 °F)
+        "NIGHT_LOAD_MODEL_START_HOUR": 16, // the thermostat term applies from this hour (the evening pre-shed; was 20) ...
+        "NIGHT_LOAD_MODEL_END_HOUR": 8,    // ... until this one
         "NIGHT_MAX_HOUSE_LOAD_KW": 2.4,    // ceiling on the adjusted overnight load (whole-house draw with the compressor flat out)
 
         // ── Overnight-low estimator + 10 PM night anchor (2026-07-25) ──
@@ -445,5 +482,16 @@ const SHARED_CONFIG = {
         // to 35 makes it fire EVERY day in December, i.e. it stops being a forecast and
         // becomes a calendar — don't.
         "STORM_SOLAR_KWH_THRESHOLD": 30
+    },
+
+    // Phone alerts: web push to the dashboard added to the iPhone Home Screen
+    // (PhoneAlertManager.cs; the 🔔 button in the Energy Flow header turns them on).
+    "PHONE_ALERTS": {
+        "ENABLED": true,
+        // "Ready to go off-grid" fires once the Powerwall is back on the grid and has
+        // recovered to this. Tesla publishes no minimum for Go Off-Grid, but the gateway
+        // reconnects by itself at ~5% (every on-grid episode 9/11-9/26 began at
+        // 4.9-6.1%), so going off-grid anywhere near that bounces straight back.
+        "OFF_GRID_READY_PERCENT": 15
     }
 };

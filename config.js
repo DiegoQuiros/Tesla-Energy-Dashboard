@@ -11,6 +11,9 @@ const AUTOMATION_PLAN_URL = 'https://powermanagestorage.blob.core.windows.net/en
 // NWS — which has no radiation data, so the fallback silently dropped the predicted-solar
 // chart. See the header of WeatherForecastManager.cs.
 const WEATHER_FORECAST_URL = 'https://powermanagestorage.blob.core.windows.net/energy-data/weather-forecast.json';
+// Phone alerts: the collector's VAPID public key and the upload-only URL a browser hands its
+// push subscription to. Written once by `dotnet run -- push-setup` — see phone-alerts.js.
+const PUSH_CONFIG_URL = 'https://powermanagestorage.blob.core.windows.net/energy-data/push-config.json';
 
 let energyData = [];
 let dailySummaryData = []; // Per-day kWh totals maintained by the collector job
