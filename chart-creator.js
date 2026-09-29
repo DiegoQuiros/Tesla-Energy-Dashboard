@@ -2072,8 +2072,8 @@ const solarCrossoverPlugin = {
 // `cut` in the badge background.
 const LINE_BADGE_GLYPHS = {
     'Powerwall': {
-        body: 'M7.5 2.5H16.5Q18.5 2.5 18.5 4.5V19.5Q18.5 21.5 16.5 21.5H7.5Q5.5 21.5 5.5 19.5V4.5Q5.5 2.5 7.5 2.5Z',
-        cut: 'M13 5.5L9 12.5H11.8L10.8 18.5L15 11H12.2Z'
+        body: 'M12 3L2.5 11.5H5V20.5H19V11.5H21.5Z',
+        cut: 'M10 20.5V14.5H14V20.5Z'
     },
     'Model 3': { text: '3' },
     'Model X': { text: 'X' }

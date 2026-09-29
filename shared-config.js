@@ -28,6 +28,20 @@ const SHARED_CONFIG = {
         "RECENT_LOAD_MINUTES": 45,      // window for smoothing the current house load
         "GRID_DECAY_MINUTES": 60,       // fade out the current grid import (snapshot only describes right now)
         "SOLAR_SCALE_WINDOW_HOURS": 3,  // window of today's solar used to estimate weather vs profile
+        // Today's weather forecast anchors that scale until the window has seen enough daylight
+        // (ComputeSolarScale): scale = w * measured + (1 - w) * forecast, w = E / (E + this), where E
+        // is the kWh the solar profile expected over the window's usable samples and forecast =
+        // today's predicted kWh (the "Predicted Solar Production" bar) / the POTENTIAL profile's
+        // daily total. Median measured weight by hour: 7 AM 0.07, 8 AM 0.19, 10 AM 0.41, noon 0.49,
+        // afternoon ~0.4. Without it two dim dawn readings clamped the whole day to 0.3 (2026-09-28
+        // 07:30: 14.6 kWh to go on a 49.9 kWh forecast day, day peak 21%). Backtest 2026-04-15..09-27,
+        // 8,162 forecasts 05:30-18:00 on Open-Meteo's archived day-of forecasts: pack % MAE to midnight
+        // 9.79 -> 7.81 pp (both halves -20%, before 10 AM -26..-29%), bias -1.18 -> +1.54, "reaches 97%
+        // today" right in 85.0 -> 92.3% of pre-noon forecasts, 09-06/07 storm 26.0 -> 16.2 (unlike the
+        // rejected shrink toward 1, the forecast itself was dark); on the collector's own archived
+        // outlooks (09-10..09-27) 12.67 -> 10.31. 10 and 40 score within 0.1 pp; the produced
+        // profile's total as the base scores the same MAE with bias +2.21.
+        "SOLAR_FORECAST_WEIGHT_KWH": 20,
         "MIN_EV_CHARGE_KW": 1.2,        // below ~5A the car won't charge at all
         "EV_STARVE_SLOTS": 2,           // 15-min slots below MIN_EV_CHARGE_KW of surplus before a solar-following session is modeled as ending on its own (measured: rare, ~2.5% of session endings, and always within a slot or two of the surplus collapsing)
         "DEFAULT_EV_CHARGE_LIMIT": 85,  // cars normally charge to 85% (raised from 80% on 2026-07-20)
@@ -306,9 +320,29 @@ const SHARED_CONFIG = {
     // mirrored on the dashboard chart. Actions are logged to automation-log.json.
     "UNIFIED_CONTROLLER": {
         "TARGET_PERCENT": 97,            // Powerwall "full enough" target; act when BELOW this and discharging
-        "OVERNIGHT_FLOOR_PERCENT": 5,    // overnight forecast low must stay at/above this (raise heat pump if not)
-        "OVERNIGHT_RECOVER_PERCENT": 15, // step the heat pump back DOWN toward base only when the overnight low is at/above this (dead band vs the 5% floor prevents flapping)
-        "CAR_PROTECT_SOC_PERCENT": 50,   // a charging car at/below this SOC is protected — shed the heat pump instead of stopping it
+        "OVERNIGHT_FLOOR_PERCENT": 1,    // overnight forecast low must stay at/above this (raise heat pump if not)
+        "OVERNIGHT_RECOVER_PERCENT": 15, // step the heat pump back DOWN toward base only when the overnight low is at/above this (dead band vs the 1% floor prevents flapping)
+        // Car priority hold (Diego, 2026-09-28): a car below 35% may not make the commute
+        // (Model X at 18% vs the 21% the commute needs), so the car outranks comfort. While
+        // EITHER car reads below CAR_PRIORITY_SOC_PERCENT, no automated move lowers the setpoint
+        // below CAR_PRIORITY_HOLD_F: the comfort descent (rule G) stops there and the 9 PM
+        // anchor (rule B) starts its search there instead of at 79. It only blocks descents —
+        // a setpoint already below the hold is left alone, and banking (rule F) still spends
+        // solar that would otherwise be curtailed. Hard rule H4 carries the exception.
+        // The same line decides the car stop (rule A, Diego 2026-09-28 — was a separate 50%):
+        // a car below it is protected (the heat pump sheds first); at or above it the car is
+        // stopped first, and the afternoon forecast stop (rule A2) may stop it.
+        "CAR_PRIORITY_SOC_PERCENT": 35,
+        // Rule A2, the forecast stop (Diego, 2026-09-28: "I'd stop the car around 3:50 when
+        // the pack was ~96% so it could refill to 100%"): from this hour on, with the pack
+        // below TARGET and draining, a charging car at/above CAR_PRIORITY_SOC_PERCENT is stopped
+        // when the day forecast says the pack misses TARGET with it charging but reaches it
+        // without — the start gate's test run in reverse. 3 PM, not noon: replaying the
+        // 9/11-9/28 afternoons, every noon-2 PM firing (9/13, 9/24, 9/25, 9/27) was a car that
+        // kept charging while the pack still reached 100% — below 97% the house fills the pack
+        // first, which the forecast's co-charging model does not know.
+        "FORECAST_STOP_START_HOUR": 15,
+        "CAR_PRIORITY_HOLD_F": 81,
         "COMFORT_MIN_F": 76,             // coolest allowed cool setpoint (only reached when excess solar would otherwise be wasted)
         // Resting DAYTIME cool setpoint — where the house sits unless a rule has a reason to
         // move it, and the floor the daytime comfort descent (rule G) walks back down to.
@@ -391,6 +425,9 @@ const SHARED_CONFIG = {
                                          // setting (a trip tomorrow), not a passing action, so it outlives the 2h start/stop lock.
                                          // Also seeded on the first observation after a deploy, so the limits the cars carry
                                          // the day automation comes on are treated as Diego's and respected for a day.
+        "USER_SETPOINT_LOCK_HOURS": 1,   // after a detected MANUAL cool-setpoint change (one the automation did not write), no
+                                         // heat-pump rule touches the thermostat for this long (Diego 2026-09-28: 9/27 he set 80
+                                         // at 7:45 PM and the evening pre-shed raised it to 81 fifteen minutes later)
         "AUTO_SETTLE_MINUTES": 30,       // minimum gap after one automated car action before the opposite one (let rates settle / don't instantly restart)
         "MAX_FAILED_ATTEMPTS_PER_DAY": 3,// give up a repeatedly-failing car command after this many tries in a Pacific day
         "LOG_MAX_ENTRIES": 1000,         // cap the automation-log.json ring buffer at this many newest entries

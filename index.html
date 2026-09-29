@@ -946,6 +946,10 @@
                                 <path class="cable-flow" id="flowSolar" d="M748 250 C 700 215, 630 175, 567 147" />
                                 <path class="cable" d="M938 296 C 990 258, 1060 225, 1115 205" />
                                 <path class="cable-flow" id="flowGrid" d="M938 296 C 990 258, 1060 225, 1115 205" />
+                                <!-- off-grid marker (Tesla-app convention): red X at the grid cable's midpoint -->
+                                <g id="gridDisconnectX" class="grid-x" transform="translate(1025.4 243.8)" style="display: none;">
+                                    <path d="M-6 -6 L6 6 M6 -6 L-6 6" />
+                                </g>
                                 <!-- main panel -> heat pump (short run along the wall to the unit's left flank) -->
                                 <path class="cable" d="M666 486 C 688 485, 706 492, 733 500" />
                                 <path class="cable-flow" id="flowHp" d="M666 486 C 688 485, 706 492, 733 500" />
@@ -970,10 +974,6 @@
                             <div class="flow-node-value" id="flowHomeValue">-- kW</div>
                             <div class="flow-node-label">Home</div>
                         </div>
-                        <div class="ov flow-node node-grid" style="left: 1050px; top: 180px;">
-                            <div class="flow-node-value" id="flowGridValue">0 kW</div>
-                            <div class="flow-node-label" id="flowGridLabel">GRID</div>
-                        </div>
 
                         <!-- Powerwall readout -->
                         <div class="mini-card pw-card" style="left: 540px; top: 613px;">
@@ -988,6 +988,13 @@
                             <div class="mc-head"><span class="mc-name">Heat Pump</span><span class="mc-pct" id="hpIndoorTemp">--°</span></div>
                             <div class="mc-sub"><b id="flowHeatPumpValue">-- kW</b> · <span id="hpSetpoint">Set --°</span> · <span id="hpMode">--</span></div>
                             <div class="mc-sub">Outside <span id="hpOutdoorTemp">--°</span> · <span id="hpStatus">--</span></div>
+                        </div>
+
+                        <!-- Grid readout (under the tower, x = 1025 + the tower's 120 offset) -->
+                        <div class="mini-card grid-card" style="left: 1145px; top: 613px;">
+                            <div class="mc-head"><span class="mc-name">Grid</span><span class="mc-pct" id="flowGridValue">-- kW</span></div>
+                            <div class="mc-sub"><b id="gridConnection">--</b></div>
+                            <div class="mc-sub"><span id="gridFlow">--</span></div>
                         </div>
 
                         <!-- Vehicles -->

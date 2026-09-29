@@ -101,6 +101,10 @@ async function reloadAutomationPlan() {
         if (!plan || plan.GeneratedUtc === previous) return;
         window.automationPlan = plan;
         if (typeof Chart !== 'undefined') createCharts();
+        // The heat-pump card's "Set" reads this cycle's write from the plan
+        // (setpointAfterCycle), so a plan that lands after the sample must redraw the
+        // cards too — 2026-09-28 16:15 the card said 83 for 15 min after the write to 84.
+        updateDashboard();
     } catch (error) {
         console.error('Error reloading the automation plan:', error);
     }
@@ -310,10 +314,14 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
             }
         }
 
+        // An offline car can still be charging: the collector fills IsCharging and the
+        // draw from the Wall Connector (EnergyDataCollector.ApplyWallConnectorDraw), so the
+        // live sample — not the last online one — answers "charging now".
+        const chargingNow = !!latest[`${vehiclePrefix}IsCharging`];
         if (latest[`${vehiclePrefix}IsAvailable`]) {
             statusElement.textContent = dataToUse[`${vehiclePrefix}ChargingState`] || 'Unknown';
         } else {
-            statusElement.textContent = 'Offline';
+            statusElement.textContent = chargingNow ? 'Charging · Offline' : 'Offline';
         }
 
         // Prefer rated range (battery_range) to match the Tesla app; the Model 3 no
@@ -322,13 +330,13 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
         rangeElement.textContent = `${Math.round(rangeMiles)} miles`;
 
         if (chargingRateElement) {
-            if (dataToUse[`${vehiclePrefix}IsCharging`] && latest[`${vehiclePrefix}IsAvailable`]) {
+            if (chargingNow) {
                 // ChargeAmps is the requested limit, not what's flowing; use measured current/voltage
-                const actualCurrent = dataToUse[`${vehiclePrefix}ChargerActualCurrent`] || 0;
-                const voltage = dataToUse[`${vehiclePrefix}ChargerVoltage`] || 0;
+                const actualCurrent = latest[`${vehiclePrefix}ChargerActualCurrent`] || 0;
+                const voltage = latest[`${vehiclePrefix}ChargerVoltage`] || 0;
                 const powerKw = (actualCurrent > 0 && voltage > 100)
                     ? (actualCurrent * voltage) / 1000
-                    : (dataToUse[`${vehiclePrefix}ChargerPowerKw`] || 0);
+                    : (latest[`${vehiclePrefix}ChargerPowerKw`] || 0);
                 const amps = (actualCurrent > 0 && voltage > 100)
                     ? actualCurrent
                     : Math.round((powerKw * 1000) / 240);

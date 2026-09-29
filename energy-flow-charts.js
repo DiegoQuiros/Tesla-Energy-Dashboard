@@ -14,7 +14,7 @@ function scaleFlowStage() {
         // The scene's content only occupies part of the 1210x600 stage.
         // Fit that content box (plus a small margin) inside the container in
         // BOTH dimensions (the container may be viewport-capped), centered.
-        const cb = { x: 55, y: 30, w: 1095, h: 515 };
+        const cb = { x: 55, y: 30, w: 1130, h: 515 }; // right edge clears the grid card under the tower
         const s = Math.min(w / cb.w, h / cb.h);
         const x = (w - cb.w * s) / 2 - cb.x * s;
         const y = (h - cb.h * s) / 2 - cb.y * s;
@@ -103,8 +103,15 @@ function updateEnergyFlowHouse(latest) {
     setText('hpOutdoorTemp', deg(latest.ThermostatOutdoorTempF > 0 ? latest.ThermostatOutdoorTempF : latest.WeatherTemperatureF));
     setText('hpStatus', latest.ThermostatIsActivelyRunning ? 'Running' : 'Idle');
 
+    // Grid card: connection state from the gateway's grid_status ("Active" = connected,
+    // anything else = islanded); older samples without it show "--".
+    const gridKnown = !!latest.GridStatus;
+    const gridConnected = gridKnown && latest.GridStatus.toLowerCase() === 'active';
     setText('flowGridValue', `${Math.abs(gridPower).toFixed(1)} kW`);
-    setText('flowGridLabel', gridPower > 0.1 ? 'IMPORTING' : gridPower < -0.1 ? 'EXPORTING' : 'GRID');
+    setText('gridConnection', !gridKnown ? '--' : gridConnected ? 'Connected' : 'Disconnected');
+    setText('gridFlow', gridPower > 0.1 ? 'Importing' : gridPower < -0.1 ? 'Exporting' : 'Idle');
+    const gridX = document.getElementById('gridDisconnectX');
+    if (gridX) gridX.style.display = gridKnown && !gridConnected ? '' : 'none';
 
     // Sun dims a little at night / when barely producing
     const sunGlow = document.getElementById('sunGlow');
@@ -116,6 +123,8 @@ function updateEnergyFlowHouse(latest) {
     setCableFlow('flowSolar', solarPower > 0.05, true, solarPower, AMBER);
     // Grid: importing (grid -> house) = reverse/blue; exporting (house -> grid) = forward/green
     setCableFlow('flowGrid', Math.abs(gridPower) > 0.1, gridPower > 0, gridPower, gridPower > 0 ? BLUE : GREEN);
+    // Connected to the utility: static cable tinted blue, like a plugged-in car.
+    setCablePlugged('flowGrid', gridConnected);
     // Powerwall: charging (house -> pw) = forward; discharging (pw -> house) = reverse
     setCableFlow('flowPw', Math.abs(batteryPower) > 0.05, batteryPower > 0, batteryPower, GREEN);
     // Cars only ever receive energy (wall -> car = forward). Plugged in but not

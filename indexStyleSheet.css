@@ -930,14 +930,13 @@ body {
         color: #c9b8ff;
     }
 
-.node-grid {
-    border-color: rgba(91, 157, 255, 0.55);
-    background: rgba(13, 28, 52, 0.72);
+/* Off-grid marker on the grid cable */
+.grid-x path {
+    fill: none;
+    stroke: #ff4d4d;
+    stroke-width: 3;
+    stroke-linecap: round;
 }
-
-    .node-grid .flow-node-value {
-        color: #8fc0ff;
-    }
 
 /* Mini cards (Powerwall + vehicles) */
 .mini-card {
@@ -1020,8 +1019,13 @@ body {
         color: #ffb08a;
     }
 
+    .grid-card .mc-name {
+        color: #8fc0ff;
+    }
+
     /* No bar on this card: a divider fills the bar's 20px slot so it stands as tall as its neighbours */
-    .hp-card .mc-head {
+    .hp-card .mc-head,
+    .grid-card .mc-head {
         padding-bottom: 10px;
         border-bottom: 1px solid rgba(255, 255, 255, 0.09);
         margin-bottom: 9px;
@@ -1336,6 +1340,16 @@ html {
     font-size: 0.8rem;
     font-weight: 600;
     color: #cdd7e6;
+}
+
+.automation-log-rule {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #9aa7bd;
+    border: 1px solid #9aa7bd55;
+    border-radius: 4px;
+    padding: 0 5px;
+    cursor: help;
 }
 
 .automation-log-time {

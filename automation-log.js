@@ -24,6 +24,20 @@ const AUTOMATION_LOG_MIN_FETCH_GAP_MS = 60 * 1000;
 // Relative-timestamp re-render tick (no network).
 const AUTOMATION_LOG_TICK_MS = 60 * 1000;
 
+// Rule letter the controller logs (entry.Rule) -> its heading in docs/decision-rules/
+// heat-pump-setpoint.md (A/E point on into car-charging.md; LIMIT is car-charging.md's
+// "Charge limit" section). Hover text only; entries older than 2026-09-26 carry no Rule.
+const AUTOMATION_RULE_NAMES = {
+    A: 'Car stop fallback',
+    B: '9 PM night anchor',
+    C: 'Overnight survival raise',
+    D: 'Evening pre-shed',
+    E: 'Car start',
+    F: 'Solar banking',
+    G: 'Comfort descent',
+    LIMIT: 'Charge limit (storm pre-charge)'
+};
+
 // Action -> {label, color} for the colored badge. Colors follow the dashboard palette.
 const AUTOMATION_LOG_ACTION_STYLES = {
     START_CAR: { label: 'Start car', color: '#39d98a' },
@@ -105,6 +119,7 @@ function renderAutomationLogRow(entry) {
             <div class="automation-log-row-head">
                 <span class="automation-log-badge" style="background:${style.color}1a; color:${style.color}; border-color:${style.color}55;">${escapeAutomationLogHtml(style.label)}</span>
                 ${entry.Target ? `<span class="automation-log-target">${escapeAutomationLogHtml(entry.Target)}</span>` : ''}
+                ${entry.Rule ? `<span class="automation-log-rule" title="${escapeAutomationLogHtml(AUTOMATION_RULE_NAMES[entry.Rule] || '')}">Rule ${escapeAutomationLogHtml(entry.Rule)}</span>` : ''}
                 <span class="automation-log-time" title="${escapeAutomationLogHtml(ago || '')}">${escapeAutomationLogHtml(displayTime || ago || '')}</span>
             </div>
             <div class="automation-log-reason">${escapeAutomationLogHtml(entry.Reason || '')}</div>
