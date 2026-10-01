@@ -133,7 +133,7 @@ function updateEnergyFlowHouse(latest) {
     // while the car is asleep/offline); older samples fall back to the car's own report.
     const pluggedIn = key => latest.WallConnectorState != null
         ? latest.WallConnectorVehicle === key : !!latest[key + 'IsPluggedIn'];
-    // A car the controller stopped this cycle shows stopped (chargingAfterCycle); the
+    // A car the controller stopped/started this cycle shows that (chargingAfterCycle); the
     // Home remainder above still subtracts its draw, since the reading's load includes it.
     const m3Charging = chargingAfterCycle(latest, 'Model3');
     const mxCharging = chargingAfterCycle(latest, 'ModelX');

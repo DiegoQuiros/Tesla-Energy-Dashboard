@@ -718,20 +718,24 @@ function setpointAfterCycle(point, field) {
     return point[field];
 }
 
-// Whether <key>'s car was still charging after <point>'s collector cycle. Same read-before-
+// Whether <key>'s car was charging after <point>'s collector cycle. Same read-before-
 // write order as setpointAfterCycle: a car the controller stopped this cycle still reads
 // "charging" in its own sample (2026-09-30 15:45 — the Model X showed Charging for 15 min
-// after rule A2 stopped it). A STOP_CAR logged between this sample and the next wins.
+// after rule A2 stopped it), and one it started still reads asleep/offline (2026-10-01
+// 8:45). The last START_CAR/STOP_CAR logged between this sample and the next wins.
 function chargingAfterCycle(point, key) {
     const charging = !!point[key + 'IsCharging'];
-    if (!charging || !Array.isArray(window.automationLog)) return charging;
+    if (!Array.isArray(window.automationLog)) return charging;
     const from = Date.parse(point.Timestamp);
     const i = energyData.indexOf(point);
     const until = i >= 0 && i + 1 < energyData.length ? Date.parse(energyData[i + 1].Timestamp) : Infinity;
-    return !window.automationLog.some(e => {
+    let after = charging;
+    for (const e of window.automationLog) {
         const t = Date.parse(e.TimeUtc);
-        return e.Action === 'STOP_CAR' && e.Target === key && t >= from && t < until;
-    });
+        if (e.Target === key && t >= from && t < until && (e.Action === 'STOP_CAR' || e.Action === 'START_CAR'))
+            after = e.Action === 'START_CAR';
+    }
+    return after;
 }
 
 // Heat-pump / HVAC chart: indoor temp + heat/cool setpoints across the day (12am–11:59pm),

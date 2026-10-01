@@ -317,11 +317,13 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
         // An offline car can still be charging: the collector fills IsCharging and the
         // draw from the Wall Connector (EnergyDataCollector.ApplyWallConnectorDraw), so the
         // live sample — not the last online one — answers "charging now".
-        // A stop the controller made after this reading wins (chargingAfterCycle).
+        // A stop or start the controller made after this reading wins (chargingAfterCycle).
         const readCharging = !!latest[`${vehiclePrefix}IsCharging`];
         const chargingNow = chargingAfterCycle(latest, vehiclePrefix);
         if (readCharging && !chargingNow) {
             statusElement.textContent = 'Stopped';
+        } else if (!readCharging && chargingNow) {
+            statusElement.textContent = 'Charge started';
         } else if (latest[`${vehiclePrefix}IsAvailable`]) {
             statusElement.textContent = dataToUse[`${vehiclePrefix}ChargingState`] || 'Unknown';
         } else {
