@@ -718,6 +718,22 @@ function setpointAfterCycle(point, field) {
     return point[field];
 }
 
+// Whether <key>'s car was still charging after <point>'s collector cycle. Same read-before-
+// write order as setpointAfterCycle: a car the controller stopped this cycle still reads
+// "charging" in its own sample (2026-09-30 15:45 — the Model X showed Charging for 15 min
+// after rule A2 stopped it). A STOP_CAR logged between this sample and the next wins.
+function chargingAfterCycle(point, key) {
+    const charging = !!point[key + 'IsCharging'];
+    if (!charging || !Array.isArray(window.automationLog)) return charging;
+    const from = Date.parse(point.Timestamp);
+    const i = energyData.indexOf(point);
+    const until = i >= 0 && i + 1 < energyData.length ? Date.parse(energyData[i + 1].Timestamp) : Infinity;
+    return !window.automationLog.some(e => {
+        const t = Date.parse(e.TimeUtc);
+        return e.Action === 'STOP_CAR' && e.Target === key && t >= from && t < until;
+    });
+}
+
 // Heat-pump / HVAC chart: indoor temp + heat/cool setpoints across the day (12am–11:59pm),
 // with outdoor temp for context. Reads Bryant thermostat fields written by the collector.
 function createHvacChart() {

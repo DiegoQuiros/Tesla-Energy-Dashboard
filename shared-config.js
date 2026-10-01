@@ -532,6 +532,11 @@ const SHARED_CONFIG = {
         "OFF_GRID_READY_PERCENT": 15,
         // Still on grid (and still at the threshold) this long after "ready": one reminder,
         // which replaces the first alert on the phone. 0 = no reminder.
-        "REMINDER_MINUTES": 60
+        "REMINDER_MINUTES": 60,
+        // "Solar about to be curtailed": off-grid, no car plugged in at home, and the Powerwall
+        // charging within this many kW of its intake ceiling (IntakeCeilingKw, ~4.3 kW in Sept
+        // 2026) or already at it. Past the ceiling the inverter throws the rest of the array
+        // away, so it's time to plug a car in. Once per day. 0 = off.
+        "CURTAIL_LEAD_KW": 0.6
     }
 };

@@ -133,10 +133,14 @@ function updateEnergyFlowHouse(latest) {
     // while the car is asleep/offline); older samples fall back to the car's own report.
     const pluggedIn = key => latest.WallConnectorState != null
         ? latest.WallConnectorVehicle === key : !!latest[key + 'IsPluggedIn'];
-    setCableFlow('flowCar1', !!latest.Model3IsCharging, false, m3Charge, GREEN);
-    setCablePlugged('flowCar1', !latest.Model3IsCharging && pluggedIn('Model3'));
-    setCableFlow('flowCar2', !!latest.ModelXIsCharging, false, mxCharge, GREEN);
-    setCablePlugged('flowCar2', !latest.ModelXIsCharging && pluggedIn('ModelX'));
+    // A car the controller stopped this cycle shows stopped (chargingAfterCycle); the
+    // Home remainder above still subtracts its draw, since the reading's load includes it.
+    const m3Charging = chargingAfterCycle(latest, 'Model3');
+    const mxCharging = chargingAfterCycle(latest, 'ModelX');
+    setCableFlow('flowCar1', m3Charging, false, m3Charge, GREEN);
+    setCablePlugged('flowCar1', !m3Charging && pluggedIn('Model3'));
+    setCableFlow('flowCar2', mxCharging, false, mxCharge, GREEN);
+    setCablePlugged('flowCar2', !mxCharging && pluggedIn('ModelX'));
     // Heat pump draws from the house (house -> heat pump = forward)
     setCableFlow('flowHp', heatPumpPower > 0, false, heatPumpPower, '#ff8a5c');
 
