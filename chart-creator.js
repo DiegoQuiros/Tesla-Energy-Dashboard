@@ -2121,6 +2121,9 @@ const lineBadgesPlugin = {
             for (let j = points.length - 1; j >= 0; j--) {
                 const p = points[j];
                 if (p && !p.skip && Number.isFinite(p.x) && Number.isFinite(p.y)) {
+                    // Zoomed away from the line's end: no badge rather than one floating outside
+                    if (p.x < chartArea.left || p.x > chartArea.right ||
+                        p.y < chartArea.top || p.y > chartArea.bottom) break;
                     badges.push({ glyph, color: ds.borderColor, px: p.x, py: p.y, y: p.y });
                     break;
                 }
