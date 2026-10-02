@@ -368,7 +368,7 @@ const SHARED_CONFIG = {
         // ceiling than COMFORT_MAX_F, so the evening can run hotter than the night is ever
         // allowed to. The anchor then decides the night with the bedtime pull-down priced in
         // (see MeasurePriorNightLowPercent), so a hot evening cannot trick it into 79.
-        "EVENING_MAX_F": 84,             // hottest the EVENING pre-shed may go (Diego: "82 or even 84")
+        "EVENING_MAX_F": 82,             // hottest the EVENING pre-shed may go (Diego 2026-10-01: 84 -> 82, same as the night)
         "EVENING_SHED_START_HOUR": 16,   // earliest hour the pre-shed may act (the discharge gate makes the real time dynamic)
         "DRAIN_DEBOUNCE_CYCLES": 2,      // consecutive cycles of "below target AND discharging" before a reactive car stop (rejects a passing cloud)
         "MIN_CAR_KWH": 1,                // a car must be able to take at least this many kWh (headroom below its limit) to be worth starting
