@@ -149,7 +149,7 @@ const SHARED_CONFIG = {
     // (ChargeAutomationManager.PredictPowerwallOvernight and the 10 PM anchor in
     // ChargeAutomationManager.Controller.cs). Collector-side only — nothing in the
     // dashboard reads this block. The comfort ladder itself (COMFORT_MIN/BASE/MAX_F,
-    // OVERNIGHT_FLOOR/RECOVER_PERCENT) lives in UNIFIED_CONTROLLER below; the old
+    // OVERNIGHT_FLOOR_PERCENT) lives in UNIFIED_CONTROLLER below; the old
     // start/stop trigger thresholds that used to live here went out with the legacy
     // routines they fed.
     "CHARGE_AUTOMATION": {
@@ -320,13 +320,12 @@ const SHARED_CONFIG = {
     // mirrored on the dashboard chart. Actions are logged to automation-log.json.
     "UNIFIED_CONTROLLER": {
         "TARGET_PERCENT": 97,            // Powerwall "full enough" target; act when BELOW this and discharging
-        "OVERNIGHT_FLOOR_PERCENT": 1,    // overnight forecast low must stay at/above this (raise heat pump if not)
-        "OVERNIGHT_RECOVER_PERCENT": 15, // step the heat pump back DOWN toward base only when the overnight low is at/above this (dead band vs the 1% floor prevents flapping)
+        "OVERNIGHT_FLOOR_PERCENT": 1,    // the ONE overnight line: raise the heat pump when the forecast low is under it, lower it when even a bad night one degree cooler stays at/above it (Diego 2026-10-03; was a separate 15% to descend)
         // Car priority hold (Diego, 2026-09-28): a car below 35% may not make the commute
         // (Model X at 18% vs the 21% the commute needs), so the car outranks comfort. While
         // EITHER car reads below CAR_PRIORITY_SOC_PERCENT, no automated move lowers the setpoint
-        // below CAR_PRIORITY_HOLD_F: the comfort descent (rule G) stops there and the 9 PM
-        // anchor (rule B) starts its search there instead of at 79. It only blocks descents —
+        // below CAR_PRIORITY_HOLD_F: the comfort descent (rule G) stops there. The 9 PM
+        // anchor (rule B) ignores the cars (Diego, 2026-10-03). It only blocks descents —
         // a setpoint already below the hold is left alone, and banking (rule F) still spends
         // solar that would otherwise be curtailed. Hard rule H4 carries the exception.
         // The same line decides the car stop (rule A, Diego 2026-09-28 — was a separate 50%):

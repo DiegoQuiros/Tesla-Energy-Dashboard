@@ -1,10 +1,10 @@
 /* ============================================================
-   Section rail — a column of card icons docked at the right edge
+   Section rail — a column of card icons docked at the left edge
    (markup at the end of #dashboard in index.html; click/hover-to-
    scroll and the "you are here" mark in section-rail.js).
 
    Collapsed it is just the icons. Hovering it widens the rail to
-   the LEFT and reveals each card's name beside its icon; the icons
+   the RIGHT and reveals each card's name beside its icon; the icons
    never move, so the one under the pointer stays put.
 
    The hover target is the rail as a whole, not each item: every gap
@@ -12,7 +12,7 @@
    moving between them never leaves :hover. Collapsing also waits a
    moment, so clipping a corner on the way out doesn't snap it shut.
 
-   The collapsed width is reserved on the page (#dashboard's right
+   The collapsed width is reserved on the page (#dashboard's left
    padding below), so collapsed it never covers a card. Expanded it
    overlays the card instead of reflowing — narrowing every chart on
    each hover would redraw them all.
@@ -28,14 +28,14 @@
     }
 }
 
-/* Every card ends a gap short of the rail, mirroring the page's left margin */
+/* Every card starts a gap past the rail, mirroring the page's right margin */
 #dashboard {
-    padding-right: calc(var(--rail-w) + var(--page-pad-x));
+    padding-left: calc(var(--rail-w) + var(--page-pad-x));
 }
 
 .section-rail {
     position: fixed;
-    right: var(--page-pad-x);
+    left: var(--page-pad-x);
     /* Centered in the area below the fixed top band */
     top: calc(50% + var(--topbar-h) / 2);
     transform: translateY(-50%);
@@ -81,9 +81,9 @@
 
 .rail-item {
     display: flex;
-    /* Icon first from the right, name to its left: while the rail is collapsed
-       the name overflows off the left edge, where overflow-x clips it */
-    flex-direction: row-reverse;
+    /* Icon first from the left, name to its right: while the rail is collapsed
+       the name overflows off the right edge, where overflow-x clips it */
+    flex-direction: row;
     align-items: center;
     /* Must be at least the rail's 4px padding, which is inside the clip — so the
        padding shows this gap, not the end of the name */
@@ -126,7 +126,7 @@
 }
 
 .rail-label {
-    padding-left: 10px;
+    padding-right: 10px;
     font-size: 0.85rem;
     font-weight: 500;
 }

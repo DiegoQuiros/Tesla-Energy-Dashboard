@@ -1,4 +1,4 @@
-// Section rail (right edge, styled in section-rail.css): clicking or resting the
+// Section rail (left edge, styled in section-rail.css): clicking or resting the
 // mouse on an icon scrolls that card into place, and the icon of the card on
 // screen is marked aria-current.
 //
