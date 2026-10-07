@@ -355,19 +355,19 @@ const SHARED_CONFIG = {
         // that has nowhere to go — the precool lowers the evening's cooling cost.
         // The night uses NIGHT_ANCHOR (79) instead, not this.
         "COMFORT_BASE_F": 78,            // resting daytime cool setpoint (floor of the daytime descent, ceiling of banking's unwind)
-        "COMFORT_MAX_F": 82,             // hottest the NIGHT may get: the 10 PM anchor's ceiling and the cap on mid-night
-                                         // survival raises (Diego: sleeping cool matters most — see EVENING_MAX_F)
+        "COMFORT_MAX_F": 81,             // hottest the NIGHT may get: the 9 PM anchor's ceiling and the cap on survival
+                                         // raises outside the evening window (Diego 2026-10-07: 82 -> 81 — see EVENING_MAX_F)
 
         // ── Evening pre-shed (2026-09-25, Diego's routine automated) ──
         // "I'd rather put up with the heat during the evening if that means I can lower the
         // setpoint at 10 PM." From the solar crossover (pack discharging) at/after
-        // EVENING_SHED_START_HOUR until the 10 PM anchor, whenever the CONSERVATIVE estimate
+        // EVENING_SHED_START_HOUR until the 9 PM anchor, whenever the CONSERVATIVE estimate
         // says a NIGHT_ANCHOR_SETPOINT_F night would end under the floor, the controller steps
-        // the setpoint up one degree per cycle toward EVENING_MAX_F — a separate, higher
-        // ceiling than COMFORT_MAX_F, so the evening can run hotter than the night is ever
-        // allowed to. The anchor then decides the night with the bedtime pull-down priced in
+        // the setpoint up one degree per cycle toward EVENING_MAX_F — a separate ceiling
+        // from COMFORT_MAX_F (currently 2 degrees higher), so the evening can run hotter than
+        // the night is ever allowed to. The anchor then decides the night with the bedtime pull-down priced in
         // (see MeasurePriorNightLowPercent), so a hot evening cannot trick it into 79.
-        "EVENING_MAX_F": 82,             // hottest the EVENING pre-shed may go (Diego 2026-10-01: 84 -> 82, same as the night)
+        "EVENING_MAX_F": 83,             // hottest the EVENING (4-9 PM) raises may go (Diego: 84 -> 82 on 2026-10-01, 82 -> 83 on 2026-10-07)
         "EVENING_SHED_START_HOUR": 16,   // earliest hour the pre-shed may act (the discharge gate makes the real time dynamic)
         "DRAIN_DEBOUNCE_CYCLES": 2,      // consecutive cycles of "below target AND discharging" before a reactive car stop (rejects a passing cloud)
         "MIN_CAR_KWH": 1,                // a car must be able to take at least this many kWh (headroom below its limit) to be worth starting
@@ -482,9 +482,9 @@ const SHARED_CONFIG = {
         "BANK_KW_PER_F": 0.71,           // house kW added per °F of cooling, MEASURED 10:00-20:00 (±0.12) — the DAYTIME instantaneous rate, NOT HVAC_OVERNIGHT_KW_PER_F
         "BANK_RESERVE_KW": 0.4,          // waste left deliberately unused so the trigger survives the action (0.4 beat 1.0 on recapture, both equally stable)
         "BANK_HYSTERESIS_KW": 0.35,      // half a degree of slack around each degree boundary, so a noisy sample can't cross back — this, not a dwell timer, is what keeps the rule stable
-        "BANK_ENTER_PERCENT": 99,        // engage banking at/above this pack % ...
+        "BANK_ENTER_PERCENT": 98.4,      // engage banking at/above this pack % ... Off-grid the pack reports in ~0.4% steps (97.4/97.7/98.1/98.5/100) and a FULL pack sits at 98.5: daytime 9/8-10/6, 224 samples read 98.49-98.50 vs 64 at >= 99 (2026-10-07; was 99, which missed 10/6 15:15-15:30)
         "BANK_EXIT_PERCENT": 97,         // ... and stay engaged until it falls below this (the pack crosses 99 between consecutive samples 16% of the time)
-        "BANK_SMOOTH_SAMPLES": 3,        // median over this many samples (45 min) of the waste signal — clouds and the fridge move it by more than a degree's worth; do NOT widen (see above)
+        "BANK_SMOOTH_SAMPLES": 3,        // median over this many samples (45 min) of the waste signal — clouds and the fridge move it by more than a degree's worth; do NOT widen (see above). Cooling also reads the latest sample alone (signal = max of the two, 2026-10-07), so this only slows the unwind
         "BANK_DISCHARGE_GUARD_KW": 0.75, // pack discharging more than this = the sun is not covering the house, so no solar is being wasted. A FULL pack off-grid trickles out a median 0.27 kW (p95 0.60) on its own, so the guard sits above that and below trickle + one banked degree (~1.0 kW). Measured 2026-09-26 over 235 full-pack daytime samples
 
         // Storm / reduced-solar pre-charge: raise BOTH cars' charge limit to 100% when a
@@ -529,7 +529,9 @@ const SHARED_CONFIG = {
         // recovered to this. Tesla publishes no minimum for Go Off-Grid, but the gateway
         // reconnects by itself at ~5% (every on-grid episode 9/11-9/26 began at
         // 4.9-6.1%), so going off-grid anywhere near that bounces straight back.
-        "OFF_GRID_READY_PERCENT": 15,
+        // 15 -> 7 (Diego 2026-10-07): alert as soon as the morning sun lifts the pack
+        // clear of the reconnect point.
+        "OFF_GRID_READY_PERCENT": 7,
         // "Solar about to be curtailed": off-grid, no car plugged in at home, and the Powerwall
         // charging within this many kW of its intake ceiling (IntakeCeilingKw, ~4.3 kW in Sept
         // 2026) or already at it. Past the ceiling the inverter throws the rest of the array
