@@ -522,6 +522,7 @@ const SHARED_CONFIG = {
 
     // Phone alerts: web push to the dashboard added to the iPhone Home Screen
     // (PhoneAlertManager.cs; the 🔔 button in the Energy Flow header turns them on).
+    // Every alert repeats each collector cycle (15 min) while its condition holds.
     "PHONE_ALERTS": {
         "ENABLED": true,
         // "Ready to go off-grid" fires once the Powerwall is back on the grid and has
@@ -529,13 +530,10 @@ const SHARED_CONFIG = {
         // reconnects by itself at ~5% (every on-grid episode 9/11-9/26 began at
         // 4.9-6.1%), so going off-grid anywhere near that bounces straight back.
         "OFF_GRID_READY_PERCENT": 15,
-        // Still on grid (and still at the threshold) this long after "ready": one reminder,
-        // which replaces the first alert on the phone. 0 = no reminder.
-        "REMINDER_MINUTES": 60,
         // "Solar about to be curtailed": off-grid, no car plugged in at home, and the Powerwall
         // charging within this many kW of its intake ceiling (IntakeCeilingKw, ~4.3 kW in Sept
         // 2026) or already at it. Past the ceiling the inverter throws the rest of the array
-        // away, so it's time to plug a car in. Once per day. 0 = off.
+        // away, so it's time to plug a car in. 0 = off.
         "CURTAIL_LEAD_KW": 0.6
     }
 };
