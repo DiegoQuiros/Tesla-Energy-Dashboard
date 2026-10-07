@@ -140,6 +140,50 @@ function createCharts() {
     createEnergyBalanceChart(todayData);
 }
 
+// --- Legend totals -------------------------------------------------------------
+// Prints each dataset's total kWh (sum of its bars, sign ignored) directly under
+// its legend entry. The legend's fit() is wrapped to reserve one extra text row
+// beneath it; labels.padding on the chart must be at least LEGEND_TOTAL_ROW_PX so
+// a wrapped second legend row doesn't sit on the first row's totals.
+const LEGEND_TOTAL_ROW_PX = 16;
+
+function formatLegendKwh(kwh) {
+    return kwh >= 100
+        ? `${Math.round(kwh).toLocaleString()} kWh`
+        : `${kwh.toFixed(1)} kWh`;
+}
+
+const legendTotalsPlugin = {
+    id: 'legendTotals',
+    beforeInit(chart) {
+        const legend = chart.legend;
+        if (!legend) return;
+        const fit = legend.fit;
+        legend.fit = function () {
+            fit.call(this);
+            this.height += LEGEND_TOTAL_ROW_PX;
+        };
+    },
+    afterDraw(chart) {
+        const legend = chart.legend;
+        if (!legend || !legend.legendHitBoxes) return;
+        const { ctx } = chart;
+        ctx.save();
+        ctx.font = '11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        legend.legendItems.forEach((item, i) => {
+            const box = legend.legendHitBoxes[i];
+            const dataset = chart.data.datasets[item.datasetIndex];
+            if (!box || !dataset) return;
+            const total = dataset.data.reduce((sum, v) => sum + Math.abs(v || 0), 0);
+            ctx.fillStyle = item.hidden ? 'rgba(204, 204, 204, 0.45)' : '#cccccc';
+            ctx.fillText(formatLegendKwh(total), box.left + box.width / 2, box.top + box.height + 3);
+        });
+        ctx.restore();
+    }
+};
+
 function createDailySolarChart() {
     const canvas = document.getElementById('dailySolarChart');
     if (!canvas) return;
@@ -261,6 +305,7 @@ function createDailySolarChart() {
                 }] : [])
             ]
         },
+        plugins: [legendTotalsPlugin],
         options: {
             responsive: true,
             maintainAspectRatio: false,
@@ -268,7 +313,8 @@ function createDailySolarChart() {
             plugins: {
                 legend: {
                     labels: {
-                        color: '#ffffff'
+                        color: '#ffffff',
+                        padding: 20 // room for the totals row (legendTotalsPlugin)
                     }
                 },
                 tooltip: {
@@ -1720,6 +1766,7 @@ function createEnergyBalanceChart(todayData) {
     energyBalanceChart = new Chart(ctx, {
         type: 'bar',
         data: { labels: buildDayGridLabels(), datasets },
+        plugins: [legendTotalsPlugin],
         options: {
             responsive: true,
             maintainAspectRatio: false,
@@ -1730,7 +1777,8 @@ function createEnergyBalanceChart(todayData) {
             datasets: { bar: { categoryPercentage: 0.95, barPercentage: 0.95 } },
             plugins: {
                 legend: {
-                    labels: { color: '#ffffff', boxWidth: 12 }
+                    // padding leaves room for the totals row (legendTotalsPlugin)
+                    labels: { color: '#ffffff', boxWidth: 12, padding: 20 }
                 },
                 tooltip: {
                     callbacks: {
