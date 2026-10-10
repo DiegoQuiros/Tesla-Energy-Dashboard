@@ -77,7 +77,13 @@ function setupTimeNavigatorCallbacks() {
    charts are re-drawn only when the sample actually advanced (see
    loadEnergyData). */
 
-const REFRESH_BUFFER_MS = 35000;       // let the collector finish publishing (was 25s, c8fb509)
+// The cycle is detected by polling the controller's plan blob (12 KB, published LAST
+// each cycle) rather than by guessing a fixed delay and re-fetching the 19.5 MB sample:
+// 2026-10-10 10:45 the fixed 35 s fetch landed one second before the sample (+36 s) and
+// the plan (+38 s), and the 20 s retry put the update on screen at +58 s.
+const REFRESH_POLL_START_MS = 25000;   // first look; run-to-run publish time varies, so start early
+const REFRESH_POLL_MS = 3000;          // then every 3 s until the plan is newer than the boundary
+const REFRESH_MAX_POLLS = 60;          // ~3 min with no new plan (controller failed?) — fetch anyway
 const REFRESH_STALE_RETRY_MS = 20000;  // sample not up yet — nudge instead of losing a whole interval
 const REFRESH_MAX_STALE_RETRIES = 6;   // ~2 min of nudging, then fall back to the next boundary
 const REFRESH_ERROR_RETRY_MS = 60000;  // fetch failed outright
@@ -93,9 +99,9 @@ function cancelScheduledRefresh() {
     }
 }
 
-// ms until the collector's next publish boundary strictly after `sampleTime`,
-// plus the buffer. Skips past boundaries already gone (throttled background tab).
-function msUntilNextPublish(sampleTime) {
+// The collector's next publish boundary (ms) strictly after `sampleTime`. Skips
+// boundaries whose first poll time is already gone (throttled background tab).
+function nextPublishBoundary(sampleTime) {
     const intervalMs = DATA_INTERVAL_MINUTES * 60 * 1000;
 
     const boundary = new Date(sampleTime);
@@ -103,10 +109,32 @@ function msUntilNextPublish(sampleTime) {
     boundary.setMinutes(
         Math.floor(boundary.getMinutes() / DATA_INTERVAL_MINUTES) * DATA_INTERVAL_MINUTES + DATA_INTERVAL_MINUTES);
 
-    const now = Date.now();
-    let target = boundary.getTime() + REFRESH_BUFFER_MS;
-    while (target <= now) target += intervalMs;
-    return target - now;
+    let ms = boundary.getTime();
+    while (ms + REFRESH_POLL_START_MS <= Date.now()) ms += intervalMs;
+    return ms;
+}
+
+// Sleep until the first poll for the cycle after `sampleTime`, then poll for it.
+function scheduleWaitForCycle(sampleTime, reason) {
+    const boundaryMs = nextPublishBoundary(sampleTime);
+    scheduleRefresh(boundaryMs + REFRESH_POLL_START_MS - Date.now(), reason,
+        () => waitForPublish(boundaryMs, 0));
+}
+
+// Full refresh as soon as the plan blob is newer than the boundary — the whole cycle
+// (sample, log, plan) is then up. A failed check falls through to the full fetch, whose
+// own retries take over, so a polling problem can't stall the dashboard.
+async function waitForPublish(boundaryMs, polls) {
+    const planModifiedMs = await fetchAutomationPlanModifiedMs();
+    polls++;
+    if (isNaN(planModifiedMs) || planModifiedMs >= boundaryMs || polls >= REFRESH_MAX_POLLS) {
+        refreshData(planModifiedMs >= boundaryMs
+            ? `cycle published ${Math.round((planModifiedMs - boundaryMs) / 1000)}s after the boundary`
+            : 'plan check failed or timed out');
+        return;
+    }
+    scheduleRefresh(REFRESH_POLL_MS, `waiting for the cycle, check ${polls}/${REFRESH_MAX_POLLS}`,
+        () => waitForPublish(boundaryMs, polls));
 }
 
 function scheduleRefresh(delayMs, reason, run = refreshData) {
@@ -155,7 +183,7 @@ async function refreshData(reason) {
             `no new sample yet, retry ${staleRetries}/${REFRESH_MAX_STALE_RETRIES}`);
     } else {
         staleRetries = 0;
-        scheduleRefresh(msUntilNextPublish(new Date()), 'gave up waiting, realigning to next boundary');
+        scheduleWaitForCycle(new Date(), 'gave up waiting, realigning to next boundary');
     }
 }
 
@@ -172,7 +200,7 @@ function scheduleNextCycle(reason) {
         return;
     }
     planRetries = 0;
-    scheduleRefresh(msUntilNextPublish(lastDataTimestamp),
+    scheduleWaitForCycle(lastDataTimestamp,
         behind ? 'gave up waiting for the automation plan' : reason);
 }
 
@@ -190,7 +218,7 @@ function resumeLiveRefresh() {
     staleRetries = 0;
     planRetries = 0;
 
-    const maxAge = DATA_INTERVAL_MINUTES * 60 * 1000 + REFRESH_BUFFER_MS;
+    const maxAge = DATA_INTERVAL_MINUTES * 60 * 1000 + REFRESH_POLL_START_MS;
     if (!lastDataTimestamp || Date.now() - lastDataTimestamp.getTime() > maxAge) {
         cancelScheduledRefresh();
         refreshData('catching up on stale data');

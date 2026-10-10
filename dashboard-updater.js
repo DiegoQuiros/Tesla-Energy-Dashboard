@@ -66,6 +66,18 @@ async function fetchAutomationPlan() {
     }
 }
 
+// Last-Modified of the plan blob in ms, NaN on failure. The plan is the last blob the
+// collector publishes each cycle, so main.js polls this to learn the cycle is up. A plain
+// GET of a 12 KB blob: HEAD would be lighter, but the storage CORS rule allows GET only.
+async function fetchAutomationPlanModifiedMs() {
+    try {
+        const response = await fetch(`${AUTOMATION_PLAN_URL}?t=${Date.now()}`, { cache: 'no-store' });
+        return response.ok ? Date.parse(response.headers.get('Last-Modified')) : NaN;
+    } catch (error) {
+        return NaN;
+    }
+}
+
 // The controller's output for a cycle: its plan, THEN its log. RunAsync appends the log
 // before it publishes the plan, so a log read after a plan built from the newest sample
 // holds every action taken that cycle — actions that plan no longer lists. Read in

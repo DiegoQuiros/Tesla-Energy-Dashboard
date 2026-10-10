@@ -373,6 +373,7 @@ const SHARED_CONFIG = {
         "DRAIN_DEBOUNCE_CYCLES": 2,      // consecutive cycles of "below target AND discharging" before a reactive car stop (rejects a passing cloud)
         "MIN_CAR_KWH": 1,                // a car must be able to take at least this many kWh (headroom below its limit) to be worth starting
         "MIN_SOLAR_KW": 0.1,             // "solar is producing" threshold for allowing a car start (rule: never start with no solar)
+        "SUNRISE_SOLAR_KW": 0.5,         // the anchored night ends at the morning's first sample at/above this (Diego 2026-10-10: enough to run the house); NIGHT_HVAC_MORNING_END_HOUR is the backstop on a day too dark to reach it
 
         // Opening draw of a home charging session, per car, in kW — what the car
         // INSISTS on pulling in its first slots even when the sun cannot cover it.
