@@ -99,8 +99,9 @@ function cancelScheduledRefresh() {
     }
 }
 
-// The collector's next publish boundary (ms) strictly after `sampleTime`. Skips
-// boundaries whose first poll time is already gone (throttled background tab).
+// The collector's next publish boundary (ms) strictly after `sampleTime`. Skips only
+// boundaries a NEWER one has superseded (throttled background tab) — never the latest
+// one already passed, or a tab shown again at +30 s would sit out that whole cycle.
 function nextPublishBoundary(sampleTime) {
     const intervalMs = DATA_INTERVAL_MINUTES * 60 * 1000;
 
@@ -110,14 +111,14 @@ function nextPublishBoundary(sampleTime) {
         Math.floor(boundary.getMinutes() / DATA_INTERVAL_MINUTES) * DATA_INTERVAL_MINUTES + DATA_INTERVAL_MINUTES);
 
     let ms = boundary.getTime();
-    while (ms + REFRESH_POLL_START_MS <= Date.now()) ms += intervalMs;
+    while (ms + intervalMs + REFRESH_POLL_START_MS <= Date.now()) ms += intervalMs;
     return ms;
 }
 
 // Sleep until the first poll for the cycle after `sampleTime`, then poll for it.
 function scheduleWaitForCycle(sampleTime, reason) {
     const boundaryMs = nextPublishBoundary(sampleTime);
-    scheduleRefresh(boundaryMs + REFRESH_POLL_START_MS - Date.now(), reason,
+    scheduleRefresh(Math.max(0, boundaryMs + REFRESH_POLL_START_MS - Date.now()), reason,
         () => waitForPublish(boundaryMs, 0));
 }
 
@@ -146,11 +147,24 @@ function scheduleRefresh(delayMs, reason, run = refreshData) {
         return;
     }
 
+    // A hidden tab (another tab, minimized, another desktop) downloads nothing: each
+    // cycle is the 19.5 MB sample plus a redraw nobody sees. The visibilitychange
+    // handler calls resumeLiveRefresh(), which catches up the moment it's looked at.
+    // The automation-log card keeps its own 15-min poll (130 KB) so its beep still works.
+    if (document.hidden) {
+        console.log('Tab hidden — refresh paused');
+        return;
+    }
+
     const at = new Date(Date.now() + delayMs);
     console.log(`Next refresh at ${at.toLocaleTimeString()} (in ${Math.round(delayMs / 1000)}s — ${reason})`);
 
     refreshTimeout = setTimeout(() => {
         refreshTimeout = null;
+        if (document.hidden) {   // hidden after arming; resumeLiveRefresh() re-arms
+            console.log('Tab hidden — refresh paused');
+            return;
+        }
         run(reason);
     }, delayMs);
 }
