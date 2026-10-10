@@ -288,6 +288,20 @@ body {
     min-height: 160px;
 }
 
+/* Hourly strip under the 16-day charts: shorter than the daily charts, full width */
+.forecast-hourly {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    margin-top: 10px;
+}
+
+.forecast-hourly .forecast-chart-wrapper {
+    flex: 0 0 auto;
+    height: 140px;
+    min-height: 0;
+}
+
 
 .weather-temp {
     font-size: 2.4rem;
@@ -963,6 +977,28 @@ body {
     font-size: 12.5px;
     font-weight: 700;
     letter-spacing: 0.02em;
+}
+
+/* Car cards: name + the Away badge (shown only while the car's away — its car and cable
+   are hidden from the scene then; at home the drawn car says it) */
+.mc-left {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+}
+
+.mc-away {
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 0 5px;
+    line-height: 14px;
+    border-radius: 8px;
+    color: #9fb0c9;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.14);
 }
 
 .mc-pct {

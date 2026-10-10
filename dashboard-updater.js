@@ -336,7 +336,10 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
         rangeElement.textContent = `${Math.round(rangeMiles)} miles`;
 
         if (chargingRateElement) {
-            if (chargingNow) {
+            // The draw is the reading's (readCharging), not the after-cycle state: a car the
+            // controller stopped this cycle was still drawing when the sample was taken, and
+            // the Home/Heat Pump split already subtracts that draw from the load.
+            if (readCharging) {
                 // ChargeAmps is the requested limit, not what's flowing; use measured current/voltage
                 const actualCurrent = latest[`${vehiclePrefix}ChargerActualCurrent`] || 0;
                 const voltage = latest[`${vehiclePrefix}ChargerVoltage`] || 0;
@@ -347,6 +350,10 @@ function updateVehicleCard(vehiclePrefix, cardPrefix, latest, currentTime, batte
                     ? actualCurrent
                     : Math.round((powerKw * 1000) / 240);
                 chargingRateElement.textContent = `${powerKw.toFixed(1)} kW • ${amps}A`;
+            } else if (chargingNow) {
+                // Started after this reading was taken: no draw measured yet — the next
+                // sample (Wall Connector) carries it.
+                chargingRateElement.textContent = 'Starting';
             } else {
                 chargingRateElement.textContent = '-- kW';
             }

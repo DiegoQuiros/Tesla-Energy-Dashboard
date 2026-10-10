@@ -122,9 +122,11 @@ function updateEnergyFlowHouse(latest) {
     // Solar always flows sun -> house (into the house = reverse)
     setCableFlow('flowSolar', solarPower > 0.05, true, solarPower, AMBER);
     // Grid: importing (grid -> house) = reverse/blue; exporting (house -> grid) = forward/green
-    setCableFlow('flowGrid', Math.abs(gridPower) > 0.1, gridPower > 0, gridPower, gridPower > 0 ? BLUE : GREEN);
-    // Connected to the utility: static cable tinted blue, like a plugged-in car.
-    setCablePlugged('flowGrid', gridConnected);
+    const gridFlowing = Math.abs(gridPower) > 0.1;
+    setCableFlow('flowGrid', gridFlowing, gridPower > 0, gridPower, gridPower > 0 ? BLUE : GREEN);
+    // Connected but idle: static cable tinted blue, like a plugged-in car. Not while
+    // flowing — the blue import dashes would vanish into a blue cable.
+    setCablePlugged('flowGrid', gridConnected && !gridFlowing);
     // Powerwall: charging (house -> pw) = forward; discharging (pw -> house) = reverse
     setCableFlow('flowPw', Math.abs(batteryPower) > 0.05, batteryPower > 0, batteryPower, GREEN);
     // Cars only ever receive energy (wall -> car = forward). Plugged in but not
@@ -141,6 +143,20 @@ function updateEnergyFlowHouse(latest) {
     setCablePlugged('flowCar1', !m3Charging && pluggedIn('Model3'));
     setCableFlow('flowCar2', mxCharging, false, mxCharge, GREEN);
     setCablePlugged('flowCar2', !mxCharging && pluggedIn('ModelX'));
+    // A car that's away (the plan's CarsAtHome) leaves the scene with its cable and its card
+    // says Away; at home the drawn car says it, so no badge. Unknown, and any historical
+    // moment (the live plan can't speak for it), draws the car as before.
+    const live = !window.timeNavigator || window.timeNavigator.isInLiveMode();
+    const carsAtHome = (live && window.automationPlan && window.automationPlan.CarsAtHome) || {};
+    [['Model3', 'carModel3', 'flowCar1', 'model3Away'], ['ModelX', 'carModelX', 'flowCar2', 'modelXAway']]
+        .forEach(([key, carId, flowId, badgeId]) => {
+            const away = carsAtHome[key] === false;
+            const flow = document.getElementById(flowId);
+            for (const el of [document.getElementById(carId), flow, flow && flow.previousElementSibling])
+                if (el) el.style.display = away ? 'none' : '';
+            const badge = document.getElementById(badgeId);
+            if (badge) badge.hidden = !away;
+        });
     // Heat pump draws from the house (house -> heat pump = forward)
     setCableFlow('flowHp', heatPumpPower > 0, false, heatPumpPower, '#ff8a5c');
 

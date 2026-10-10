@@ -12,6 +12,7 @@
 
 let weatherTempChartObj = null;
 let weatherSolarChartObj = null;
+let weatherHourlyChartObj = null;
 
 function hexToRgba(hex, alpha) {
     const n = parseInt(hex.slice(1), 16);
@@ -148,6 +149,10 @@ function renderForecast(container, days) {
                 <div class="forecast-chart-title">☀️ Predicted Solar Production (kWh)</div>
                 <div class="forecast-chart-wrapper"><canvas id="weatherSolarChart"></canvas></div>
             </div>
+        </div>
+        <div class="forecast-hourly" id="weatherHourlySection" style="display: none;">
+            <div class="forecast-chart-title" id="weatherHourlyTitle"></div>
+            <div class="forecast-chart-wrapper"><canvas id="weatherHourlyChart"></canvas></div>
         </div>`;
 
     // Three short lines per tick so 16 labels fit in a half-width chart
@@ -180,6 +185,7 @@ function renderForecast(container, days) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            onClick: (evt, els) => { if (els.length) renderHourly(days, els[0].index); },
             plugins: {
                 legend: { display: false },
                 tooltip: {
@@ -215,6 +221,7 @@ function renderForecast(container, days) {
         // browser fell back to NWS, which is what made the chart look broken; the
         // collector no longer has a radiation-free source to fall back to.)
         document.getElementById('weatherSolarChartCol').style.display = 'none';
+        renderHourly(days, defaultHourlyDay(days));
         return;
     }
     // Bars are all one colour (the solar yellow used by the production charts) — "how good
@@ -238,6 +245,7 @@ function renderForecast(container, days) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            onClick: (evt, els) => { if (els.length) renderHourly(days, els[0].index); },
             plugins: {
                 legend: { display: false },
                 tooltip: {
@@ -275,6 +283,128 @@ function renderForecast(container, days) {
             }
         },
         plugins: [thresholdLinePlugin]
+    });
+    renderHourly(days, defaultHourlyDay(days));
+}
+
+// ---- Hourly strip: one day's daylight hours under the 16-day charts ----
+// Kw comes from the collector already split so the hours add up to the day's PredictedKwh;
+// this only draws it. Tapping a day in either chart above switches the strip to that day
+// (the first 7 days carry hours; tapping a later day leaves the strip as it is).
+
+function localIsoDate(date) {
+    const pad = n => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function hourLabel(h) {
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${h12}${h < 12 ? 'a' : 'p'}`;
+}
+
+// Today while it has daylight left, otherwise the next day that has hours.
+function defaultHourlyDay(days) {
+    const now = new Date();
+    const today = localIsoDate(now);
+    return days.findIndex(d => Array.isArray(d.Hours) && d.Hours.length > 0 &&
+        (d.Date > today || (d.Date === today && d.Hours.some(h => h.Hour >= now.getHours()))));
+}
+
+function renderHourly(days, index) {
+    const section = document.getElementById('weatherHourlySection');
+    if (!section) return;
+    const day = days[index];
+    if (!day || !Array.isArray(day.Hours) || day.Hours.length === 0) {
+        // Past the hourly range (or an older blob): keep what is showing, hide if nothing is.
+        if (!weatherHourlyChartObj) section.style.display = 'none';
+        return;
+    }
+    section.style.display = '';
+
+    const { name, dateLabel } = dayLabels(day);
+    const kwh = day.PredictedKwh != null ? ` · ${day.PredictedKwh.toFixed(1)} kWh` : '';
+    document.getElementById('weatherHourlyTitle').textContent =
+        `☀️ Hourly Solar (kW) — ${name}${dateLabel ? ', ' + dateLabel : ''}${kwh}`;
+
+    // One y-axis for every day, so a cloudy day LOOKS smaller than a sunny one
+    const peak = Math.max(...days.flatMap(d => (d.Hours || []).map(h => h.Kw)), 1);
+    const now = new Date();
+    const isToday = day.Date === localIsoDate(now);
+    const past = h => isToday && h.Hour < now.getHours();
+    const current = h => isToday && h.Hour === now.getHours();
+
+    if (weatherHourlyChartObj) weatherHourlyChartObj.destroy();
+    weatherHourlyChartObj = new Chart(document.getElementById('weatherHourlyChart').getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: day.Hours.map(h => hourLabel(h.Hour)),
+            datasets: [
+                {
+                    label: 'Solar',
+                    data: day.Hours.map(h => h.Kw),
+                    backgroundColor: day.Hours.map(h => past(h) ? 'rgba(255, 204, 0, 0.25)' : 'rgba(255, 204, 0, 0.7)'),
+                    borderColor: day.Hours.map(h => current(h) ? '#ffffff' : '#ffcc00'),
+                    borderWidth: day.Hours.map(h => current(h) ? 2 : 1),
+                    borderRadius: 3,
+                    yAxisID: 'y',
+                    order: 2
+                },
+                {
+                    label: 'Cloud cover',
+                    type: 'line',
+                    data: day.Hours.map(h => h.CloudPct),
+                    borderColor: 'rgba(176, 196, 222, 0.8)',
+                    borderDash: [4, 3],
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    tension: 0.3,
+                    yAxisID: 'cloud',
+                    order: 1
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: items => {
+                            const h = day.Hours[items[0].dataIndex].Hour;
+                            return `${hourLabel(h)}–${hourLabel((h + 1) % 24)}`;
+                        },
+                        label: item => item.datasetIndex === 0
+                            ? `Solar: ${item.raw.toFixed(1)} kW`
+                            : `Cloud cover: ${item.raw != null ? item.raw + '%' : '--'}`,
+                        afterBody: items => {
+                            const p = day.Hours[items[0].dataIndex].PrecipProb;
+                            return p > 0 ? `💧 Precip chance: ${p}%` : '';
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { color: '#87ceeb', maxRotation: 0, autoSkip: false, font: { size: 9 } },
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                },
+                y: {
+                    min: 0,
+                    suggestedMax: Math.ceil(peak),
+                    ticks: { color: '#888', callback: value => value + ' kW' },
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                },
+                cloud: {
+                    position: 'right',
+                    min: 0,
+                    max: 100,
+                    ticks: { color: '#7d8ca3', stepSize: 50, callback: value => value + '% ☁' },
+                    grid: { display: false }
+                }
+            }
+        }
     });
 }
 

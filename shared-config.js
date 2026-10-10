@@ -335,7 +335,8 @@ const SHARED_CONFIG = {
         // Rule A2, the forecast stop (Diego, 2026-09-28: "I'd stop the car around 3:50 when
         // the pack was ~96% so it could refill to 100%"): from this hour on, with the pack
         // below TARGET and draining, a charging car at/above CAR_PRIORITY_SOC_PERCENT is stopped
-        // when the day forecast says the pack misses TARGET with it charging but reaches it
+        // when the day forecast says the pack misses full (BANK_ENTER_PERCENT, was TARGET until
+        // 2026-10-08) with it charging but reaches it
         // without — the start gate's test run in reverse. 3 PM, not noon: replaying the
         // 9/11-9/28 afternoons, every noon-2 PM firing (9/13, 9/24, 9/25, 9/27) was a car that
         // kept charging while the pack still reached 100% — below 97% the house fills the pack
@@ -536,6 +537,10 @@ const SHARED_CONFIG = {
         // charging within this many kW of its intake ceiling (IntakeCeilingKw, ~4.3 kW in Sept
         // 2026) or already at it. Past the ceiling the inverter throws the rest of the array
         // away, so it's time to plug a car in. 0 = off.
+        // When a car is parked at home unplugged (GPS within 150 m of home, Key Vault
+        // home-location; without a position in 24 h, on the home cable within 24 h and its
+        // battery hasn't dropped 2% since), "Model X is home — plug it in" replaces
+        // this alert, and also fires on a full pack with >= 1 kW of sun going unused (10/8).
         "CURTAIL_LEAD_KW": 0.6
     }
 };
