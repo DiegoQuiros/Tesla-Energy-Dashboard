@@ -9,6 +9,12 @@
 // and turning alerts on creates one blob in a private container through it. Once a device
 // has subscribed, the collector revokes that URL and publishes null instead: the button then
 // shows only on the subscribed device (to turn alerts off) and stays hidden everywhere else.
+//
+// Lost alerts: iOS can drop a Home Screen app's subscription on the device while Apple keeps
+// answering 201 for the old endpoint, so the collector believes every alert went out (10/12:
+// 17 accepted, 2 shown). The only sign is on the phone, so the device that subscribed
+// remembers it (localStorage) and, if it later finds no subscription while the slot is closed,
+// shows a red warning instead of hiding the button. The fix needs the PC: push-reset reopens the slot.
 
 (function () {
     const button = document.getElementById('alertsButton');
@@ -16,19 +22,44 @@
     button.hidden = true; // until we know whether this device may use it
 
     const TAKEN = 'Alerts are already set up on another device.';
+    const SUBSCRIBED_KEY = 'phoneAlertsSubscribed'; // this device held the subscription
+    const LOST = 'Phone alerts stopped on this device: iOS dropped its subscription, so notifications '
+        + 'are no longer reaching it (the collector cannot tell).\n\nTo fix: on the PC, in '
+        + 'PowerManagement\\PowerManagement, run\n  dotnet run -- push-reset\nthen close and reopen '
+        + 'this app and tap 🔕 Alerts.';
     const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
     const isIos = /iPhone|iPad|iPod/.test(navigator.userAgent)
         || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 
     let current = null; // this device's PushSubscription, once known
+    let lost = false;   // this device was subscribed and no longer is
+
+    // localStorage can throw (private mode, blocked storage); the warning is a convenience.
+    function remember(on) {
+        try { on ? localStorage.setItem(SUBSCRIBED_KEY, '1') : localStorage.removeItem(SUBSCRIBED_KEY); } catch { }
+    }
+    function wasSubscribed() {
+        try { return localStorage.getItem(SUBSCRIBED_KEY) === '1'; } catch { return false; }
+    }
 
     function show(on) {
+        lost = false;
         button.textContent = on ? '🔔 Alerts on' : '🔕 Alerts';
         button.classList.toggle('on', on);
+        button.classList.remove('lost');
         button.title = on
             ? 'Phone alerts are on for this device. Tap to turn them off.'
             : 'Get a notification when the Powerwall is back on the grid';
+        button.hidden = false;
+    }
+
+    function showLost() {
+        lost = true;
+        button.textContent = '⚠ Alerts lost';
+        button.classList.remove('on');
+        button.classList.add('lost');
+        button.title = 'This device stopped receiving phone alerts. Tap for how to fix it.';
         button.hidden = false;
     }
 
@@ -88,6 +119,7 @@
         });
         await upload(subscription, config);
         current = subscription;
+        remember(true);
         show(true);
     }
 
@@ -96,6 +128,7 @@
         await current.unsubscribe();
         // The collector frees the slot the first time the push service reports this one gone.
         current = null;
+        remember(false); // turned off on purpose: not "lost"
         button.hidden = true;
     }
 
@@ -104,6 +137,10 @@
             alert(isIos && !standalone
                 ? 'To get alerts on iPhone: tap Share → Add to Home Screen, open the dashboard from that icon, then tap 🔕 Alerts again.'
                 : "This browser can't receive push alerts.");
+            return;
+        }
+        if (lost) {
+            alert(LOST);
             return;
         }
         button.disabled = true;
@@ -134,11 +171,14 @@
         .then(([subscription, config]) => {
             if (subscription && Notification.permission === 'granted') {
                 current = subscription;
+                remember(true);
                 show(true);
                 // While the slot is still open, hand it over again in case the first upload never arrived.
                 if (config.subscriptionUploadUrl) return upload(subscription, config);
             } else if (config.subscriptionUploadUrl) {
                 show(false);
+            } else if (wasSubscribed()) {
+                showLost();
             }
         })
         .catch(err => console.warn('Phone alerts:', err.message || err));

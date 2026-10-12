@@ -776,6 +776,11 @@ body {
         border-color: rgba(255, 176, 31, 0.6);
     }
 
+    .alerts-btn.lost {
+        color: #ff5d5d;
+        border-color: rgba(255, 93, 93, 0.7);
+    }
+
     .alerts-btn:disabled {
         opacity: 0.6;
         cursor: wait;
