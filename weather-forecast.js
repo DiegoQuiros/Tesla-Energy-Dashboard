@@ -185,7 +185,7 @@ function renderForecast(container, days) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            onClick: (evt, els) => { if (els.length) renderHourly(days, els[0].index); },
+            onClick: (evt, els) => { if (els.length) pickHourlyDay(days, els[0].index); },
             plugins: {
                 legend: { display: false },
                 tooltip: {
@@ -245,7 +245,7 @@ function renderForecast(container, days) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            onClick: (evt, els) => { if (els.length) renderHourly(days, els[0].index); },
+            onClick: (evt, els) => { if (els.length) pickHourlyDay(days, els[0].index); },
             plugins: {
                 legend: { display: false },
                 tooltip: {
@@ -302,10 +302,23 @@ function hourLabel(h) {
     return `${h12}${h < 12 ? 'a' : 'p'}`;
 }
 
-// Today while it has daylight left, otherwise the next day that has hours.
+// The day the reader clicked, kept across background refreshes until it is in the past.
+let pickedHourlyDate = null;
+
+function pickHourlyDay(days, index) {
+    pickedHourlyDate = days[index] ? days[index].Date : null;
+    renderHourly(days, index);
+}
+
+// The reader's pick while it is still current, else today while it has daylight left,
+// otherwise the next day that has hours.
 function defaultHourlyDay(days) {
     const now = new Date();
     const today = localIsoDate(now);
+    const picked = pickedHourlyDate && pickedHourlyDate >= today
+        ? days.findIndex(d => d.Date === pickedHourlyDate && Array.isArray(d.Hours) && d.Hours.length > 0)
+        : -1;
+    if (picked >= 0) return picked;
     return days.findIndex(d => Array.isArray(d.Hours) && d.Hours.length > 0 &&
         (d.Date > today || (d.Date === today && d.Hours.some(h => h.Hour >= now.getHours()))));
 }
@@ -419,18 +432,37 @@ function whenLaidOut(el) {
     });
 }
 
+// The card refetches on its own clock, independent of the energy-data refresh: the
+// "Today" label, the dimmed past hours and the outlook itself all go stale in a tab left
+// open for days. Paused while hidden; catches up the moment the tab is looked at again.
+const WEATHER_REFRESH_MS = 15 * 60 * 1000;
+let weatherLoadedAt = 0;
+let weatherTimer = null;
+
 async function loadWeatherForecast() {
     const container = document.getElementById('weatherForecast');
     if (!container) return;
 
+    clearTimeout(weatherTimer);
     try {
         const outlook = await fetchWeatherOutlook();
         await whenLaidOut(container);
         renderForecast(container, outlook.Days);
+        weatherLoadedAt = Date.now();
     } catch (error) {
         console.warn('Weather outlook unavailable:', error.message);
-        container.innerHTML = '<div style="color: #b0c4de;">Forecast unavailable</div>';
+        // A failed refresh keeps the last good outlook on screen
+        if (!weatherLoadedAt)
+            container.innerHTML = '<div style="color: #b0c4de;">Forecast unavailable</div>';
     }
+    clearTimeout(weatherTimer);   // a focus event may have armed one mid-fetch
+    if (!document.hidden) weatherTimer = setTimeout(loadWeatherForecast, WEATHER_REFRESH_MS);
 }
 
 document.addEventListener('DOMContentLoaded', loadWeatherForecast);
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { clearTimeout(weatherTimer); return; }
+    clearTimeout(weatherTimer);
+    const wait = Math.max(0, WEATHER_REFRESH_MS - (Date.now() - weatherLoadedAt));
+    weatherTimer = setTimeout(loadWeatherForecast, wait);
+});
