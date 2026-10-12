@@ -53,7 +53,11 @@ const AUTOMATION_LOG_ACTION_STYLES = {
     // way a console-only line was. Deliberately NOT in isCarSuccess below: "the car says it
     // isn't plugged in" does not prove the automation regained control of it.
     NOOP:      { label: 'No action needed', color: '#9aa7bd' },
-    FAIL:      { label: 'Command failed', color: '#ff5d5d' }
+    FAIL:      { label: 'Command failed', color: '#ff5d5d' },
+    // Phone alerts (PhoneAlertManager): ALERT = the push service accepted it (not proof the
+    // phone showed it), ALERT_FAIL = it never left (no subscription, refused, error).
+    ALERT:      { label: 'Phone alert', color: '#f48fb1' },
+    ALERT_FAIL: { label: 'Alert not sent', color: '#ff5d5d' }
 };
 
 function escapeAutomationLogHtml(text) {

@@ -1,5 +1,9 @@
 // Configuration - Update this URL to your Azure Blob Storage public URL
 const AZURE_BLOB_URL = 'https://powermanagestorage.blob.core.windows.net/energy-data/energy-data.json';
+// The live view's slice of it (last 32 days, written by the collector every cycle). The full
+// blob above is fetched only when the time navigator leaves live mode — see
+// ensureFullEnergyHistory() in dashboard-updater.js.
+const ENERGY_RECENT_URL = 'https://powermanagestorage.blob.core.windows.net/energy-data/energy-data-recent.json';
 const DAILY_SUMMARY_URL = 'https://powermanagestorage.blob.core.windows.net/energy-data/daily-summary.json';
 const AUTOMATION_LOG_URL = 'https://powermanagestorage.blob.core.windows.net/energy-data/automation-log.json';
 // The unified controller's forward projection of its OWN start/stop rules, republished

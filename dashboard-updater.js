@@ -1,11 +1,11 @@
-// Fetch the energy data blob, retrying on transient failures
-// (e.g. empty/partial JSON when the fetch races the collector's upload)
-async function fetchEnergyData(attempts = 3, retryDelayMs = 5000) {
+// Fetch an energy data blob (the recent slice or the full history), retrying on transient
+// failures (e.g. empty/partial JSON when the fetch races the collector's upload)
+async function fetchEnergyData(blobUrl = AZURE_BLOB_URL, attempts = 3, retryDelayMs = 5000) {
     let lastError;
     for (let attempt = 1; attempt <= attempts; attempt++) {
         try {
             // Add cache busting parameter to avoid browser cache issues
-            const url = `${AZURE_BLOB_URL}?t=${Date.now()}`;
+            const url = `${blobUrl}?t=${Date.now()}`;
             const response = await fetch(url);
 
             if (!response.ok) {
@@ -28,6 +28,45 @@ async function fetchEnergyData(attempts = 3, retryDelayMs = 5000) {
         }
     }
     throw lastError;
+}
+
+// The live view: the recent slice, or the full blob while the collector hasn't published the
+// slice yet (first deploy) or it can't be read — slower, never wrong.
+async function fetchLiveEnergyData() {
+    try {
+        return { data: await fetchEnergyData(ENERGY_RECENT_URL, 1), full: false };
+    } catch (error) {
+        console.warn('Recent energy data unavailable, loading the full history:', error.message);
+        return { data: await fetchEnergyData(AZURE_BLOB_URL), full: true };
+    }
+}
+
+let energyDataIsFullHistory = false;
+let fullHistoryLoad = null;
+
+// Historical mode needs every sample; the live view only the recent slice. The time navigator
+// awaits this before it leaves live mode or opens the date picker (it is hidden on phones, so
+// they never load the full blob). Resolves false when the full blob can't be read — the
+// navigator then steps through the recent slice only. Never throws.
+async function ensureFullEnergyHistory() {
+    if (energyDataIsFullHistory) return true;
+    if (!fullHistoryLoad) {
+        fullHistoryLoad = (async () => {
+            try {
+                const data = await fetchEnergyData(AZURE_BLOB_URL);
+                energyData = data.sort((a, b) => convertToPDT(a.LocalTimestamp) - convertToPDT(b.LocalTimestamp));
+                energyDataIsFullHistory = true;
+                console.log(`Loaded the full history: ${energyData.length} data points`);
+                return true;
+            } catch (error) {
+                console.warn('Full history unavailable — navigating the recent window only:', error.message);
+                return false;
+            } finally {
+                fullHistoryLoad = null;
+            }
+        })();
+    }
+    return fullHistoryLoad;
 }
 
 // Fetch the daily summary blob. Never throws: the dashboard must still work
@@ -131,12 +170,21 @@ async function loadEnergyData() {
         // has already dropped an action executed this cycle, so a log still in flight (the
         // old fire-and-forget call) erased that action from the chart until a page reload.
         const previousPlanUtc = window.automationPlan ? window.automationPlan.GeneratedUtc : null;
-        const [data, summary, automationPlan] = await Promise.all([
-            fetchEnergyData(), fetchDailySummary(), fetchAutomationPlanThenLog()]);
+        const [live, summary, automationPlan] = await Promise.all([
+            fetchLiveEnergyData(), fetchDailySummary(), fetchAutomationPlanThenLog()]);
         dailySummaryData = summary;
         // Keep the last good plan on a transient fetch failure so the forecast
         // doesn't blink off for a cycle (the fetch races the collector's upload)
         if (automationPlan) window.automationPlan = automationPlan;
+
+        // A fetch that was already in flight when the navigator left live mode must not swap
+        // the full history it is browsing for the recent slice.
+        if (window.timeNavigator && !window.timeNavigator.isInLiveMode() && energyData.length > 0) {
+            console.log('Historical mode — keeping the full history on screen');
+            return true;
+        }
+        const data = live.data;
+        energyDataIsFullHistory = live.full;
 
         energyData = data.sort((a, b) => convertToPDT(a.LocalTimestamp) - convertToPDT(b.LocalTimestamp));
 

@@ -1043,16 +1043,33 @@ function isStandardHistoricalDay(dayPoints) {
     return !wasCurtailed;
 }
 
-function computeHistoricalSolarBand(dataSource, currentTime, gridMinutes) {
-    const excludedDateStr = convertToPDT(currentTime).toDateString();
+// The solar chart's band covers the HISTORICAL_BAND_DAYS calendar days before the viewed
+// day. Bounded explicitly: it used to take every day the data held — 30–60 days of the live
+// blob, and a whole year's seasons in Historical mode once the blob keeps more history. The
+// live view's energy-data-recent.json (RECENT_DAYS = 32 in EnergyDataCollector) covers it.
+const HISTORICAL_BAND_DAYS = 30;
+
+function groupHistoricalBandDays(dataSource, currentTime) {
+    const viewed = convertToPDT(currentTime);
+    const excludedDateStr = viewed.toDateString();
+    const from = new Date(viewed);
+    from.setHours(0, 0, 0, 0);
+    from.setDate(from.getDate() - HISTORICAL_BAND_DAYS);
 
     const byDay = new Map();
     for (const point of dataSource) {
-        const dayKey = convertToPDT(point.LocalTimestamp).toDateString();
+        const date = convertToPDT(point.LocalTimestamp);
+        if (date < from) continue;
+        const dayKey = date.toDateString();
         if (dayKey === excludedDateStr) continue;
         if (!byDay.has(dayKey)) byDay.set(dayKey, []);
         byDay.get(dayKey).push(point);
     }
+    return byDay;
+}
+
+function computeHistoricalSolarBand(dataSource, currentTime, gridMinutes) {
+    const byDay = groupHistoricalBandDays(dataSource, currentTime);
 
     // Sort each day's points and drop exact-duplicate timestamps (the archive/live
     // blob windows overlap, so a sample can appear twice for the same minute).
@@ -1213,14 +1230,7 @@ function createSolarChart(todayData) {
     // (excluding the day currently on the chart) and reduced to the widest span, so
     // the x-axis can be widened to fit the historical band alongside today/yesterday.
     function findHistoricalStartEndRange(dataSource, currentTime) {
-        const excludedDateStr = convertToPDT(currentTime).toDateString();
-        const byDay = new Map();
-        for (const point of dataSource) {
-            const dayKey = convertToPDT(point.LocalTimestamp).toDateString();
-            if (dayKey === excludedDateStr) continue;
-            if (!byDay.has(dayKey)) byDay.set(dayKey, []);
-            byDay.get(dayKey).push(point);
-        }
+        const byDay = groupHistoricalBandDays(dataSource, currentTime);
 
         let minStart = null;
         let maxEnd = null;

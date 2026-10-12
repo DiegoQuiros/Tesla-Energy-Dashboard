@@ -81,8 +81,12 @@ class TimeNavigator {
         document.getElementById('timeNavToggle').addEventListener('click', () => this.setCollapsed(false));
         document.getElementById('timeNavCollapse').addEventListener('click', () => this.setCollapsed(true));
 
-        // Date picker event
-        document.getElementById('datePickerInput').addEventListener('change', (e) => this.jumpToDate(e.target.value));
+        // Date picker event. Opening it loads the full history first, so its earliest
+        // selectable date is the real one rather than the live view's 32-day slice.
+        const datePicker = document.getElementById('datePickerInput');
+        datePicker.addEventListener('change', (e) => this.jumpToDate(e.target.value));
+        datePicker.addEventListener('focus', () => this.loadFullHistory());
+        datePicker.addEventListener('pointerdown', () => this.loadFullHistory());
 
         // Set max date to yesterday
         this.updateDatePickerConstraints();
@@ -113,7 +117,16 @@ class TimeNavigator {
         });
     }
 
-    stepTime(minutes) {
+    // The live view holds only the recent slice; leaving it needs every sample. A no-op once
+    // loaded (see ensureFullEnergyHistory). On failure the navigator browses the slice.
+    async loadFullHistory() {
+        if (typeof ensureFullEnergyHistory === 'function') await ensureFullEnergyHistory();
+        this._filteredCache = null;
+        this.updateDatePickerConstraints();
+    }
+
+    async stepTime(minutes) {
+        await this.loadFullHistory();
         if (this.isLiveMode) {
             // First step back from live mode
             this.selectedTime = this.getLatestDataTime();
@@ -163,7 +176,8 @@ class TimeNavigator {
     // Jump a whole calendar day back/forward, landing on that day's last
     // available sample (not "24h from the current wall-clock time") so
     // "-1 Day" from live mode lands on yesterday's final data point.
-    stepDay(direction) {
+    async stepDay(direction) {
+        await this.loadFullHistory();
         const referenceTime = this.isLiveMode ? this.getLatestDataTime() : this.selectedTime;
         const targetDate = new Date(referenceTime);
         targetDate.setDate(targetDate.getDate() + direction);
@@ -222,8 +236,9 @@ class TimeNavigator {
         }
     }
 
-    jumpToDate(dateString) {
+    async jumpToDate(dateString) {
         if (!dateString) return;
+        await this.loadFullHistory();
 
         const selectedDate = new Date(dateString + 'T23:59:59');
         const earliestTime = this.getEarliestDataTime();
